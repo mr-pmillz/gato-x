@@ -32,6 +32,7 @@ import re
 import zipfile
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 import httpx
 
@@ -112,7 +113,20 @@ class ApiBase:
         if not github_url:
             self.github_url = "https://api.github.com"
         else:
-            self.github_url = github_url
+            self.github_url = github_url.rstrip("/")
+
+        self.is_public_github = self.github_url == "https://api.github.com"
+
+        # GraphQL does not live under the REST base on GitHub Enterprise.
+        # api.github.com and api.SUBDOMAIN.ghe.com serve it from the host root,
+        # while GHES serves it from /api/graphql even though REST is /api/v3.
+        parsed_url = urlparse(self.github_url)
+        if parsed_url.hostname and parsed_url.hostname.startswith("api."):
+            self.graphql_url = f"{parsed_url.scheme}://{parsed_url.netloc}/graphql"
+        elif self.github_url.endswith("/api/v3"):
+            self.graphql_url = f"{self.github_url[: -len('/v3')]}/graphql"
+        else:
+            self.graphql_url = f"{self.github_url}/graphql"
 
         if http_proxy and socks_proxy:
             raise ValueError(
@@ -127,7 +141,7 @@ class ApiBase:
         elif socks_proxy:
             self.transport = f"socks5://{socks_proxy}"
 
-        if self.github_url != "https://api.github.com":
+        if not self.is_public_github:
             self.verify_ssl = False
 
         if client:
@@ -163,6 +177,19 @@ class ApiBase:
     # ---------------------------------------------------------------
     # HTTP wrappers
     # ---------------------------------------------------------------
+    def _build_url(self, url: str) -> str:
+        """Join a path onto the configured API base.
+
+        Absolute URLs (the API hands them back for artifact / log downloads)
+        are used as-is. ``/graphql`` is resolved separately because it does not
+        live under the REST base on GitHub Enterprise Server.
+        """
+        if url.startswith(("http://", "https://")):
+            return url
+        if url == "/graphql":
+            return self.graphql_url
+        return self.github_url + url
+
     async def call_get(
         self, url: str, params: dict | None = None, strip_auth: bool = False
     ) -> httpx.Response:
@@ -177,7 +204,7 @@ class ApiBase:
         Returns:
             The :class:`httpx.Response` from the underlying client.
         """
-        request_url = self.github_url + url
+        request_url = self._build_url(url)
 
         get_header = copy.deepcopy(self.headers)
         if strip_auth:
@@ -210,7 +237,7 @@ class ApiBase:
 
     async def call_post(self, url: str, params: dict | None = None) -> httpx.Response:
         """Issue a POST request relative to ``github_url`` with a JSON body."""
-        request_url = self.github_url + url
+        request_url = self._build_url(url)
         logger.debug(f"Making POST API request to {request_url}!")
 
         api_response = await self.client.post(request_url, json=params, timeout=30)
@@ -224,7 +251,7 @@ class ApiBase:
 
     async def call_patch(self, url: str, params: dict | None = None) -> httpx.Response:
         """Issue a PATCH request relative to ``github_url`` with a JSON body."""
-        request_url = self.github_url + url
+        request_url = self._build_url(url)
         logger.debug(f"Making PATCH API request to {request_url}!")
 
         api_response = await self.client.patch(request_url, json=params)
@@ -238,7 +265,7 @@ class ApiBase:
 
     async def call_put(self, url: str, params: dict | None = None) -> httpx.Response:
         """Issue a PUT request relative to ``github_url`` with a JSON body."""
-        request_url = self.github_url + url
+        request_url = self._build_url(url)
         logger.debug(f"Making PUT API request to {request_url}!")
 
         api_response = await self.client.put(request_url, json=params)
@@ -249,7 +276,7 @@ class ApiBase:
 
     async def call_delete(self, url: str) -> httpx.Response:
         """Issue a DELETE request relative to ``github_url``."""
-        request_url = self.github_url + url
+        request_url = self._build_url(url)
         logger.debug(f"Making DELETE API request to {request_url}!")
 
         api_response = await self.client.delete(request_url)
@@ -465,7 +492,15 @@ class ApiBase:
         Used to dodge the API rate-limit when the target repo is public.
         Retries a small handful of times to ride out any transient
         ``RemoteProtocolError`` chunks that occur in flaky network paths.
+
+        Returns ``None`` when targeting a GitHub Enterprise instance: the
+        content does not live on the public raw host, and requesting it there
+        would disclose internal repository names to github.com. Callers fall
+        back to the authenticated contents API.
         """
+        if not self.is_public_github:
+            return None
+
         url = f"https://raw.githubusercontent.com/{repo}/{ref}/{file_path}"
         headers = {
             "Authorization": "None",

@@ -942,3 +942,103 @@ async def test_save_runlogs_flag_parsed(mock_enumerator, tmp_path):
         ignore_workflow_run=False,
         save_runlogs=runlogs_dir,
     )
+
+
+def _mock_enumerator_instance(mock_enumerator):
+    mock_instance = mock_enumerator.return_value
+    mock_instance.api = mock.MagicMock()
+    mock_instance.api.user.check_user = AsyncMock(
+        return_value={
+            "user": "testUser",
+            "scopes": ["repo", "workflow"],
+        }
+    )
+    mock_instance.api.user.get_user_type = AsyncMock(return_value="Organization")
+    mock_instance.enumerate_organization = AsyncMock(return_value={"testOrg": "data"})
+    mock_instance.user_perms = {"user": "testUser", "scopes": ["repo", "workflow"]}
+    return mock_instance
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["enumerate", "-t", "test", "--api-url", "https://ghe.example.com/api/v3"],
+        ["enumerate", "-t", "test", "-u", "https://ghe.example.com/api/v3"],
+        ["--api-url", "https://ghe.example.com/api/v3", "enumerate", "-t", "test"],
+    ],
+)
+@mock.patch("gatox.cli.cli.Enumerator")
+async def test_cli_api_url_forwarded_to_enumerator(mock_enumerator, argv):
+    """--api-url must reach the Enumerator whether passed before or after the
+    subcommand."""
+    os.environ["GH_TOKEN"] = "gho_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
+    _mock_enumerator_instance(mock_enumerator)
+
+    await cli.cli(argv)
+
+    assert (
+        mock_enumerator.call_args.kwargs["github_url"]
+        == "https://ghe.example.com/api/v3"
+    )
+
+
+@mock.patch("gatox.cli.cli.Searcher")
+async def test_cli_api_url_forwarded_to_searcher(mock_searcher):
+    """--api-url passed after the search subcommand must reach the Searcher."""
+    os.environ["GH_TOKEN"] = "gho_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
+    mock_searcher.return_value.use_search_api = AsyncMock(return_value=[])
+
+    await cli.cli(
+        ["search", "-t", "testOrg", "--api-url", "https://ghe.example.com/api/v3"]
+    )
+
+    mock_searcher.assert_called_once_with(
+        "gho_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        socks_proxy=None,
+        http_proxy=None,
+        github_url="https://ghe.example.com/api/v3",
+    )
+
+
+@mock.patch("gatox.cli.cli.Enumerator")
+async def test_cli_shared_flags_after_subcommand(mock_enumerator):
+    """The other shared flags are also accepted after the subcommand."""
+    os.environ["GH_TOKEN"] = "gho_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
+    _mock_enumerator_instance(mock_enumerator)
+
+    await cli.cli(
+        ["enumerate", "-t", "test", "-sp", "127.0.0.1:9050", "--log-level", "DEBUG"]
+    )
+
+    assert mock_enumerator.call_args.kwargs["socks_proxy"] == "127.0.0.1:9050"
+
+
+@mock.patch("gatox.cli.cli.PersistenceAttack")
+async def test_cli_persistence_keeps_short_key_path_flag(mock_persistence, tmp_path):
+    """persistence -p stays bound to --key-path despite the shared --http-proxy."""
+    os.environ["GH_TOKEN"] = "gho_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+
+    key_path = str(tmp_path / "key")
+    mock_persistence.return_value.create_deploy_key = AsyncMock()
+
+    await cli.cli(
+        [
+            "persistence",
+            "-t",
+            "testOrg/testRepo",
+            "--deploy-key",
+            "-p",
+            key_path,
+            "-u",
+            "https://ghe.example.com/api/v3",
+        ]
+    )
+
+    assert (
+        mock_persistence.call_args.kwargs["github_url"]
+        == "https://ghe.example.com/api/v3"
+    )
+    assert mock_persistence.return_value.create_deploy_key.call_args.args[2] == key_path

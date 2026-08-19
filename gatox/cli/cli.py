@@ -43,18 +43,6 @@ async def cli(args):
 
     configure_parser_general(parser)
 
-    parser.add_argument(
-        "--api-url",
-        "-u",
-        help=(
-            f"{Fore.RED}{Output.bright('[Experimental]')}\n"
-            "Github API URL to target. \n"
-            "Defaults to 'https://api.github.com'"
-        ),
-        metavar="https://api.github-url.com/api/v3",
-        required=False,
-    )
-
     attack_parser = subparsers.add_parser(
         "attack",
         help="CI/CD Attack Capabilities",
@@ -99,6 +87,17 @@ async def cli(args):
     configure_parser_search(search_parser)
     configure_parser_app(app_parser)
     configure_parser_persistence(persistence_parser)
+
+    # Registered after the subcommand's own flags so a subcommand that already
+    # claims a short flag (persistence -p) keeps it.
+    for subparser in (
+        attack_parser,
+        enumerate_parser,
+        search_parser,
+        app_parser,
+        persistence_parser,
+    ):
+        configure_parser_general(subparser, subcommand=True)
 
     arguments = parser.parse_args(args)
 
@@ -732,41 +731,80 @@ async def persistence(args, parser):
         Output.error(f"Persistence attack failed: {str(e)}")
 
 
-def configure_parser_general(parser):
-    """Helper method to add arguments to all subarguments.
+def _add_general_argument(parser, flags, **kwargs):
+    """Add a shared argument, dropping the short flag if it is already taken."""
+    try:
+        parser.add_argument(*flags, **kwargs)
+    except argparse.ArgumentError:
+        parser.add_argument(flags[0], **kwargs)
+
+
+def configure_parser_general(parser, subcommand=False):
+    """Helper method to add the arguments shared by every command.
+
+    These are registered on the top level parser and on each subparser so they
+    may be passed either before or after the subcommand.
 
     Args:
         parser: The parser to add the arguments to.
+        subcommand: True when registering on a subparser. Subparsers parse into
+            their own namespace which is then merged over the top level one, so
+            their defaults are suppressed to avoid clobbering a value that was
+            passed before the subcommand.
     """
-    parser.add_argument(
-        "--log-level",
+
+    def default(value):
+        return argparse.SUPPRESS if subcommand else value
+
+    _add_general_argument(
+        parser,
+        ["--log-level"],
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default="CRITICAL",
+        default=default("CRITICAL"),
         required=False,
     )
 
-    parser.add_argument(
-        "--socks-proxy",
-        "-sp",
+    _add_general_argument(
+        parser,
+        ["--socks-proxy", "-sp"],
         help=(
             "SOCKS proxy to use for requests, in"
             f" {Fore.GREEN}HOST{Style.RESET_ALL}:{Fore.GREEN}PORT"
             f" {Style.RESET_ALL}format"
         ),
+        default=default(None),
         required=False,
     )
 
-    parser.add_argument(
-        "--http-proxy",
-        "-p",
+    _add_general_argument(
+        parser,
+        ["--http-proxy", "-p"],
         help=(
             "HTTPS proxy to use for requests, in"
             f" {Fore.GREEN}HOST{Style.RESET_ALL}:{Fore.GREEN}PORT"
             f" {Style.RESET_ALL}format."
         ),
+        default=default(None),
         required=False,
     )
 
-    parser.add_argument(
-        "--no-color", "-nc", help="Removes all color from output.", action="store_true"
+    _add_general_argument(
+        parser,
+        ["--no-color", "-nc"],
+        help="Removes all color from output.",
+        action="store_true",
+        default=default(False),
+    )
+
+    _add_general_argument(
+        parser,
+        ["--api-url", "-u"],
+        help=(
+            f"{Fore.RED}{Output.bright('[Experimental]')}\n"
+            "Github API URL to target. \n"
+            "Defaults to 'https://api.github.com'"
+        ),
+        metavar="https://api.github-url.com/api/v3",
+        default=default(None),
+        required=False,
     )

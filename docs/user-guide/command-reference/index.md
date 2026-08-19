@@ -27,6 +27,20 @@ These options are available across all commands:
 | `--no-color`, `-nc` | Removes all color from output |
 | `--api-url`, `-u` | GitHub API URL to target (defaults to https://api.github.com) |
 
+They may be passed either before or after the subcommand:
+
+```bash
+gato-x --api-url https://ghe.example.com/api/v3 enumerate --self-enumeration
+gato-x enumerate --self-enumeration --api-url https://ghe.example.com/api/v3
+```
+
+Note: the `persistence` command uses `-p` for `--key-path`, so pass `--http-proxy`
+in full after that subcommand.
+
+For GitHub Enterprise Server, `--api-url` is the REST base ending in `/api/v3`
+(the GraphQL endpoint is derived from it). For GitHub Enterprise Cloud with data
+residency, use `https://api.SUBDOMAIN.ghe.com`.
+
 ## Basic Usage
 
 The general syntax for Gato-X commands is:

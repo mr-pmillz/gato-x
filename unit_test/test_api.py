@@ -85,3 +85,113 @@ async def test_handle_ratelimit(mock_time):
     await api._check_rate_limit(test_headers)
 
     mock_time.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "github_url,expected_rest,expected_graphql",
+    [
+        (None, "https://api.github.com", "https://api.github.com/graphql"),
+        (
+            "https://api.github.com",
+            "https://api.github.com",
+            "https://api.github.com/graphql",
+        ),
+        (
+            "https://ghe.example.com/api/v3",
+            "https://ghe.example.com/api/v3",
+            "https://ghe.example.com/api/graphql",
+        ),
+        (
+            "https://ghe.example.com/api/v3/",
+            "https://ghe.example.com/api/v3",
+            "https://ghe.example.com/api/graphql",
+        ),
+        (
+            "https://api.sub.ghe.com",
+            "https://api.sub.ghe.com",
+            "https://api.sub.ghe.com/graphql",
+        ),
+        (
+            "https://api.sub.ghe.com/api/v3",
+            "https://api.sub.ghe.com/api/v3",
+            "https://api.sub.ghe.com/graphql",
+        ),
+    ],
+)
+def test_graphql_url_derived_from_api_url(github_url, expected_rest, expected_graphql):
+    """GHES serves GraphQL from /api/graphql rather than under the REST base."""
+    api = Api("ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", github_url=github_url)
+
+    assert api.github_url == expected_rest
+    assert api.graphql_url == expected_graphql
+    assert api._build_url("/graphql") == expected_graphql
+    assert api._build_url("/user") == f"{expected_rest}/user"
+
+
+async def test_graphql_post_targets_enterprise_endpoint():
+    """A /graphql POST must go to the enterprise GraphQL URL."""
+    mock_client = AsyncMock()
+    mock_client.post.return_value = MagicMock(status_code=200)
+
+    api = Api(
+        "ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        github_url="https://ghe.example.com/api/v3",
+        client=mock_client,
+    )
+
+    await api.call_post("/graphql", {"query": "{}"})
+
+    assert mock_client.post.call_args.args[0] == "https://ghe.example.com/api/graphql"
+
+
+async def test_raw_file_not_fetched_from_public_host_for_enterprise():
+    """Enterprise repo names must never be sent to raw.githubusercontent.com."""
+    mock_client = AsyncMock()
+
+    api = Api(
+        "ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        github_url="https://ghe.example.com/api/v3",
+        client=mock_client,
+    )
+
+    assert await api._get_raw_file("internal/repo", "action.yml", "main") is None
+    mock_client.get.assert_not_called()
+
+
+async def test_public_repo_file_uses_contents_api_on_enterprise():
+    """retrieve_repo_file falls back to the contents API on enterprise."""
+    mock_client = AsyncMock()
+    mock_client.get.return_value = MagicMock(
+        status_code=200,
+        headers={},
+        json=MagicMock(return_value={"content": "b2s6IHRydWU="}),
+    )
+
+    api = Api(
+        "ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        github_url="https://ghe.example.com/api/v3",
+        client=mock_client,
+    )
+
+    workflow = await api.repo.retrieve_repo_file(
+        "internal/repo", ".github/workflows/ci.yml", "main", public=True
+    )
+
+    assert workflow is not None
+    assert (
+        mock_client.get.call_args.args[0]
+        == "https://ghe.example.com/api/v3/repos/internal/repo/contents/"
+        ".github/workflows/ci.yml"
+    )
+
+
+def test_build_url_passes_absolute_urls_through():
+    """Artifact/log download URLs come back absolute from the API."""
+    api = Api(
+        "ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        github_url="https://ghe.example.com/api/v3",
+    )
+
+    download_url = "https://ghe.example.com/api/v3/repos/o/r/actions/artifacts/1/zip"
+
+    assert api._build_url(download_url) == download_url

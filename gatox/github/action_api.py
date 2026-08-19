@@ -261,9 +261,7 @@ class ActionApi(SubApi):
         if artifacts:
             download_url = artifacts[0]["archive_download_url"]
 
-            archive = await self._base.call_get(
-                download_url.replace("https://api.github.com", "")
-            )
+            archive = await self._base.call_get(download_url)
 
             with zipfile.ZipFile(io.BytesIO(archive.content)) as artifact:
                 for zipinfo in artifact.infolist():
@@ -287,9 +285,7 @@ class ActionApi(SubApi):
 
         for artifact in req.json().get("artifacts", []):
             download_url = artifact["archive_download_url"]
-            archive = await self._base.call_get(
-                download_url.replace("https://api.github.com", "")
-            )
+            archive = await self._base.call_get(download_url)
             files: dict = {}
             with zipfile.ZipFile(io.BytesIO(archive.content)) as zf:
                 for zipinfo in zf.infolist():
@@ -312,9 +308,7 @@ class ActionApi(SubApi):
         artifacts = req.json().get("artifacts", [])
         download_url = artifacts[0]["archive_download_url"]
 
-        archive = await self._base.call_get(
-            download_url.replace("https://api.github.com", "")
-        )
+        archive = await self._base.call_get(download_url)
 
         with open(destination, "wb") as f:
             f.write(archive.content)

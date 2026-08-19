@@ -23,10 +23,11 @@ class OrgApi(SubApi):
 
         if result.status_code == 200:
             return result.json()
-        elif result.status_code == 404:
-            logger.info(
-                f"The organization {org} was not found or there is a permission issue!"
-            )
+
+        logger.warning(
+            f"GET {result.request.url} for organization {org} returned "
+            f"{result.status_code}: {result.text[:512]}"
+        )
         return None
 
     async def validate_sso(self, org: str, repository: str) -> bool:

@@ -172,7 +172,7 @@ class RepoApi(SubApi):
         """
         file_data: bytes | str | None = None
 
-        if public:
+        if public and self._base.is_public_github:
             file_data = await self._base._get_raw_file(repo_name, file_path, ref)
         else:
             resp = await self._base.call_get(
