@@ -434,9 +434,7 @@ class Enumerator:
 
         if not details:
             Output.warn(
-                f"Unable to query the org: {Output.bright(org)}! A 403 usually "
-                "means the token is not SSO-authorized for it, a 404 that it "
-                "does not exist or the API URL is wrong."
+                f"Skipping the org: {Output.bright(org)}! See the API response above."
             )
             return None
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 
-from gatox.cli.output import Output
 from gatox.enumerate.ingest.ingest import DataIngestor
 from gatox.github.api_base import ApiBase, SubApi
 from gatox.github.gql_queries import GqlQueries
@@ -25,25 +24,10 @@ class OrgApi(SubApi):
         if result.status_code == 200:
             return result.json()
 
-        # Surfaced rather than logged: without the status code the operator
-        # cannot tell a missing org from an unauthorized token or a wrong
-        # --api-url, which are the three things that land here.
-        detail = ""
-        try:
-            message = result.json().get("message")
-            if message:
-                detail = f" - {message}"
-        except ValueError:
-            pass
-
-        Output.warn(
-            f"GET {Output.bright(str(result.request.url))} returned "
-            f"{Output.bright(str(result.status_code))}{detail}"
-        )
-        logger.warning(
-            f"Organization {org} lookup failed with {result.status_code}: "
-            f"{result.text[:512]}"
-        )
+        # Surfaced rather than logged: without the API's own message the
+        # operator cannot tell a missing org from an IP allow list, an
+        # SSO-unauthorized token or a wrong --api-url.
+        self._base.warn_failure(result, f"the {org} organization")
         return None
 
     async def validate_sso(self, org: str, repository: str) -> bool:

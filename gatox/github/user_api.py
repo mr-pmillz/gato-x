@@ -91,6 +91,11 @@ class UserApi(SubApi):
         }
 
         result = await self._base.call_get("/user/repos", params=get_params)
+        if result.status_code != 200:
+            # Otherwise this reads back as "no repositories" rather than as a
+            # rejected request (IP allow list, SSO, expired token).
+            self._base.warn_failure(result, "the authenticated user's repositories")
+
         if result.status_code == 200:
             listing = result.json()
             repos.extend(

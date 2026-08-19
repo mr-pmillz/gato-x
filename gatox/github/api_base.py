@@ -189,6 +189,31 @@ class ApiBase:
         """Return ``True`` if the configured token is a GitHub App token."""
         return self.pat.startswith("ghs_")
 
+    def warn_failure(self, response: httpx.Response, subject: str) -> None:
+        """Surface a rejected request along with the API's own explanation.
+
+        Callers that fall back to an empty result must use this: without it a
+        403 from an IP allow list or SSO enforcement is indistinguishable from
+        a genuinely empty response.
+        """
+        detail = ""
+        try:
+            message = response.json().get("message")
+            if message:
+                detail = f" - {message}"
+        except ValueError:
+            pass
+
+        Output.warn(
+            f"Failed to query {subject}: "
+            f"{Output.bright(str(response.request.url))} returned "
+            f"{Output.bright(str(response.status_code))}{detail}"
+        )
+        logger.warning(
+            f"Request for {subject} failed with {response.status_code}: "
+            f"{response.text[:512]}"
+        )
+
     # ---------------------------------------------------------------
     # HTTP wrappers
     # ---------------------------------------------------------------
