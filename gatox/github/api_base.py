@@ -115,13 +115,28 @@ class ApiBase:
         else:
             self.github_url = github_url.rstrip("/")
 
+        parsed_url = urlparse(self.github_url)
+        api_subdomain = bool(parsed_url.hostname) and parsed_url.hostname.startswith(
+            "api."
+        )
+
+        # api.github.com and api.SUBDOMAIN.ghe.com serve REST from the host
+        # root. The /api/v3 suffix is the GHES form: on these hosts it is a
+        # misconfiguration that 404s on most routes, so drop it.
+        if api_subdomain and parsed_url.path.rstrip("/") in ("/api/v3", "/api"):
+            self.github_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+            Output.warn(
+                f"Adjusted the API URL to {Output.bright(self.github_url)}: "
+                f"{parsed_url.hostname} serves the REST API from the host root, "
+                "not from /api/v3."
+            )
+
         self.is_public_github = self.github_url == "https://api.github.com"
 
         # GraphQL does not live under the REST base on GitHub Enterprise.
-        # api.github.com and api.SUBDOMAIN.ghe.com serve it from the host root,
-        # while GHES serves it from /api/graphql even though REST is /api/v3.
-        parsed_url = urlparse(self.github_url)
-        if parsed_url.hostname and parsed_url.hostname.startswith("api."):
+        # api.* hosts serve it from the host root, while GHES serves it from
+        # /api/graphql even though REST is /api/v3.
+        if api_subdomain:
             self.graphql_url = f"{parsed_url.scheme}://{parsed_url.netloc}/graphql"
         elif self.github_url.endswith("/api/v3"):
             self.graphql_url = f"{self.github_url[: -len('/v3')]}/graphql"

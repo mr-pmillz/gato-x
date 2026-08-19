@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from gatox.cli.output import Output
 from gatox.enumerate.ingest.ingest import DataIngestor
 from gatox.github.api_base import ApiBase, SubApi
 from gatox.github.gql_queries import GqlQueries
@@ -24,9 +25,24 @@ class OrgApi(SubApi):
         if result.status_code == 200:
             return result.json()
 
+        # Surfaced rather than logged: without the status code the operator
+        # cannot tell a missing org from an unauthorized token or a wrong
+        # --api-url, which are the three things that land here.
+        detail = ""
+        try:
+            message = result.json().get("message")
+            if message:
+                detail = f" - {message}"
+        except ValueError:
+            pass
+
+        Output.warn(
+            f"GET {Output.bright(str(result.request.url))} returned "
+            f"{Output.bright(str(result.status_code))}{detail}"
+        )
         logger.warning(
-            f"GET {result.request.url} for organization {org} returned "
-            f"{result.status_code}: {result.text[:512]}"
+            f"Organization {org} lookup failed with {result.status_code}: "
+            f"{result.text[:512]}"
         )
         return None
 

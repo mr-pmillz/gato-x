@@ -37,9 +37,17 @@ gato-x enumerate --self-enumeration --api-url https://ghe.example.com/api/v3
 Note: the `persistence` command uses `-p` for `--key-path`, so pass `--http-proxy`
 in full after that subcommand.
 
-For GitHub Enterprise Server, `--api-url` is the REST base ending in `/api/v3`
-(the GraphQL endpoint is derived from it). For GitHub Enterprise Cloud with data
-residency, use `https://api.SUBDOMAIN.ghe.com`.
+`--api-url` takes the REST base URL, and the GraphQL endpoint is derived from it:
+
+| Target | `--api-url` | Derived GraphQL endpoint |
+|--------|-------------|--------------------------|
+| GitHub.com | omit the flag | `https://api.github.com/graphql` |
+| Enterprise Cloud w/ data residency | `https://api.SUBDOMAIN.ghe.com` | `https://api.SUBDOMAIN.ghe.com/graphql` |
+| Enterprise Server (GHES) | `https://HOSTNAME/api/v3` | `https://HOSTNAME/api/graphql` |
+
+The `/api/v3` suffix belongs to GHES only. `https://api.SUBDOMAIN.ghe.com/api/v3`
+mixes the two forms and 404s on most routes, so Gato-X drops the suffix on
+`api.*` hosts and prints a notice.
 
 ## Basic Usage
 

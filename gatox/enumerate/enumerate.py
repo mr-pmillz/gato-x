@@ -434,10 +434,9 @@ class Enumerator:
 
         if not details:
             Output.warn(
-                f"Unable to query the org: {Output.bright(org)}! Ensure the "
-                "organization exists and that the token is authorized for it "
-                "(SAML SSO enforcement returns a 403). Re-run with "
-                "--log-level DEBUG to see the API response."
+                f"Unable to query the org: {Output.bright(org)}! A 403 usually "
+                "means the token is not SSO-authorized for it, a 404 that it "
+                "does not exist or the API URL is wrong."
             )
             return None
 

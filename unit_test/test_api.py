@@ -111,9 +111,16 @@ async def test_handle_ratelimit(mock_time):
             "https://api.sub.ghe.com",
             "https://api.sub.ghe.com/graphql",
         ),
+        # api.* hosts serve REST from the root: the GHES /api/v3 suffix is
+        # dropped rather than 404ing every route below it.
         (
             "https://api.sub.ghe.com/api/v3",
-            "https://api.sub.ghe.com/api/v3",
+            "https://api.sub.ghe.com",
+            "https://api.sub.ghe.com/graphql",
+        ),
+        (
+            "https://api.sub.ghe.com/api/v3/",
+            "https://api.sub.ghe.com",
             "https://api.sub.ghe.com/graphql",
         ),
     ],
@@ -195,3 +202,28 @@ def test_build_url_passes_absolute_urls_through():
     download_url = "https://ghe.example.com/api/v3/repos/o/r/actions/artifacts/1/zip"
 
     assert api._build_url(download_url) == download_url
+
+
+def test_ghe_com_api_url_keeps_rest_paths_at_host_root():
+    """A /api/v3 suffix on an api.* host is dropped, not appended to routes."""
+    api = Api(
+        "ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        github_url="https://api.sub.ghe.com/api/v3",
+    )
+
+    assert api._build_url("/orgs/testOrg") == "https://api.sub.ghe.com/orgs/testOrg"
+    assert api._build_url("/user") == "https://api.sub.ghe.com/user"
+    assert api.graphql_url == "https://api.sub.ghe.com/graphql"
+
+
+def test_ghes_api_url_keeps_api_v3_prefix():
+    """A GHES hostname keeps /api/v3 for REST and uses /api/graphql."""
+    api = Api(
+        "ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        github_url="https://ghes.corp.local/api/v3",
+    )
+
+    assert (
+        api._build_url("/orgs/testOrg") == "https://ghes.corp.local/api/v3/orgs/testOrg"
+    )
+    assert api.graphql_url == "https://ghes.corp.local/api/graphql"
