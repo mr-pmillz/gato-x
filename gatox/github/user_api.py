@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-import logging
-
 from gatox.github.api_base import ApiBase, SubApi
-
-logger = logging.getLogger(__name__)
 
 
 class UserApi(SubApi):
@@ -40,9 +36,11 @@ class UserApi(SubApi):
             }
 
             return user_scopes
-        else:
-            logger.warning("Provided token was not valid or has expired!")
 
+        # This is the first request gato-x makes, so it is where a wrong API
+        # URL, an IP allow list or an expired token all surface first. Report
+        # what the API actually said instead of guessing at the cause.
+        self._base.warn_failure(result, "the authenticated user")
         return None
 
     async def check_organizations(self) -> list[str]:
@@ -62,9 +60,10 @@ class UserApi(SubApi):
 
                 organizations.extend([org["login"] for org in orgs])
                 page += 1
-            elif result.status_code == 403:
-                break
             else:
+                self._base.warn_failure(
+                    result, "the authenticated user's organizations"
+                )
                 break
 
         return organizations

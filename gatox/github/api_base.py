@@ -49,6 +49,91 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+#: GitHub Enterprise Cloud with data residency hands every enterprise a
+#: dedicated subdomain of this zone. The web interface lives at
+#: ``SUBDOMAIN.ghe.com`` while the API lives at ``api.SUBDOMAIN.ghe.com``.
+GHE_COM_SUFFIX = ".ghe.com"
+
+PUBLIC_REST_BASE = "https://api.github.com"
+PUBLIC_GRAPHQL_URL = "https://api.github.com/graphql"
+
+
+def resolve_api_endpoints(github_url: str | None) -> tuple[str, str, str | None]:
+    """Derive the REST and GraphQL endpoints from whatever URL the operator has.
+
+    An operator should be able to paste the URL they see in the browser and
+    have it work. The three deployment shapes put their API in three
+    different places, and none of them is "the browser URL":
+
+    ======================  ==========================  ===========================
+    Browser URL             REST base                   GraphQL endpoint
+    ======================  ==========================  ===========================
+    ``github.com``          ``api.github.com``          ``api.github.com/graphql``
+    ``SUB.ghe.com``         ``api.SUB.ghe.com``         ``api.SUB.ghe.com/graphql``
+    ``ghes.corp.example``   ``ghes.corp.example``       ``ghes.corp.example``
+                            ``/api/v3``                 ``/api/graphql``
+    ======================  ==========================  ===========================
+
+    Note that GHES puts REST under ``/api/v3`` but GraphQL under
+    ``/api/graphql`` -- ``/api/v3/graphql`` is not a route, so the two cannot
+    be derived from one another by suffixing.
+
+    Refs:
+      https://docs.github.com/en/enterprise-cloud@latest/admin/data-residency/getting-started-with-data-residency-for-github-enterprise-cloud
+      https://docs.github.com/en/enterprise-server@latest/rest/quickstart
+      https://docs.github.com/en/enterprise-server@latest/graphql/guides/forming-calls-with-graphql
+
+    Args:
+        github_url: Anything from a bare hostname to a full REST base. An
+            empty value selects public GitHub.
+
+    Returns:
+        ``(rest_base, graphql_url, rewritten_from)``. ``rewritten_from`` is
+        the normalised input when it did not already name the REST base, so
+        the caller can tell the operator what was derived; ``None`` when the
+        input was already correct.
+
+    Raises:
+        ValueError: If no hostname can be parsed out of ``github_url``.
+    """
+    raw = (github_url or "").strip()
+    if not raw:
+        return PUBLIC_REST_BASE, PUBLIC_GRAPHQL_URL, None
+
+    # Accept "octocorp.ghe.com" as readily as "https://octocorp.ghe.com".
+    if "://" not in raw:
+        raw = f"https://{raw}"
+
+    parsed = urlparse(raw)
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        raise ValueError(
+            f"Could not parse a hostname out of the API URL: {github_url!r}"
+        )
+
+    scheme = parsed.scheme or "https"
+    port = f":{parsed.port}" if parsed.port else ""
+    path = parsed.path.rstrip("/")
+
+    if hostname in ("github.com", "www.github.com", "api.github.com"):
+        rest, graphql = PUBLIC_REST_BASE, PUBLIC_GRAPHQL_URL
+    elif hostname.endswith(GHE_COM_SUFFIX) or hostname.startswith("api."):
+        # Data residency subdomains -- and api.* hosts generally -- serve REST
+        # from the host root. The GHES /api/v3 suffix 404s on most routes
+        # there, so it is dropped rather than honoured.
+        api_host = hostname if hostname.startswith("api.") else f"api.{hostname}"
+        rest = f"{scheme}://{api_host}{port}"
+        graphql = f"{rest}/graphql"
+    else:
+        # Anything else is assumed to be GitHub Enterprise Server.
+        root = f"{scheme}://{hostname}{port}"
+        rest = f"{root}/api/v3"
+        graphql = f"{root}/api/graphql"
+
+    supplied = f"{scheme}://{hostname}{port}{path}"
+    return rest, graphql, None if supplied == rest else supplied
+
+
 class ApiBase:
     """Shared HTTP / rate-limit infrastructure used by every sub-API.
 
@@ -110,38 +195,27 @@ class ApiBase:
             "Authorization": f"Bearer {pat}",
             "X-GitHub-Api-Version": version,
         }
-        if not github_url:
-            self.github_url = "https://api.github.com"
-        else:
-            self.github_url = github_url.rstrip("/")
-
-        parsed_url = urlparse(self.github_url)
-        api_subdomain = bool(parsed_url.hostname) and parsed_url.hostname.startswith(
-            "api."
+        self.github_url, self.graphql_url, rewritten_from = resolve_api_endpoints(
+            github_url
         )
-
-        # api.github.com and api.SUBDOMAIN.ghe.com serve REST from the host
-        # root. The /api/v3 suffix is the GHES form: on these hosts it is a
-        # misconfiguration that 404s on most routes, so drop it.
-        if api_subdomain and parsed_url.path.rstrip("/") in ("/api/v3", "/api"):
-            self.github_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
-            Output.warn(
-                f"Adjusted the API URL to {Output.bright(self.github_url)}: "
-                f"{parsed_url.hostname} serves the REST API from the host root, "
-                "not from /api/v3."
+        if rewritten_from:
+            # The operator pasted the web URL (or a bare hostname). Say what we
+            # derived so a wrong guess is debuggable from the console alone.
+            Output.info(
+                f"Resolved {Output.bright(rewritten_from)} to the REST API at "
+                f"{Output.bright(self.github_url)} and the GraphQL API at "
+                f"{Output.bright(self.graphql_url)}."
             )
 
-        self.is_public_github = self.github_url == "https://api.github.com"
+        self.is_public_github = self.github_url == PUBLIC_REST_BASE
 
-        # GraphQL does not live under the REST base on GitHub Enterprise.
-        # api.* hosts serve it from the host root, while GHES serves it from
-        # /api/graphql even though REST is /api/v3.
-        if api_subdomain:
-            self.graphql_url = f"{parsed_url.scheme}://{parsed_url.netloc}/graphql"
-        elif self.github_url.endswith("/api/v3"):
-            self.graphql_url = f"{self.github_url[: -len('/v3')]}/graphql"
-        else:
-            self.graphql_url = f"{self.github_url}/graphql"
+        # GitHub operated hosts always present a publicly trusted certificate,
+        # so there is no reason to send the PAT over an unverified connection.
+        # GHES is commonly fronted by a private CA, where we do relax it.
+        api_hostname = urlparse(self.github_url).hostname or ""
+        self.is_github_cloud = self.is_public_github or api_hostname.endswith(
+            GHE_COM_SUFFIX
+        )
 
         if http_proxy and socks_proxy:
             raise ValueError(
@@ -156,7 +230,7 @@ class ApiBase:
         elif socks_proxy:
             self.transport = f"socks5://{socks_proxy}"
 
-        if not self.is_public_github:
+        if not self.is_github_cloud:
             self.verify_ssl = False
 
         if client:
@@ -189,6 +263,46 @@ class ApiBase:
         """Return ``True`` if the configured token is a GitHub App token."""
         return self.pat.startswith("ghs_")
 
+    @staticmethod
+    def describe_failure(response: httpx.Response) -> str:
+        """Return the API's own explanation for a rejected request.
+
+        GitHub puts the operator-actionable reason in the response body: the
+        IP allow list message, the SAML SSO message, the bad-credentials
+        message. Falls back to describing the body when it is not the JSON
+        error object we expect -- an HTML body in particular is the signature
+        of having reached the web interface instead of the API.
+        """
+        try:
+            body = response.json()
+        except Exception:
+            body = None
+
+        if isinstance(body, dict):
+            parts = []
+            if body.get("message"):
+                parts.append(str(body["message"]))
+            for err in body.get("errors") or []:
+                if isinstance(err, dict) and err.get("message"):
+                    parts.append(str(err["message"]))
+                elif isinstance(err, str):
+                    parts.append(err)
+            if body.get("documentation_url"):
+                parts.append(f"See {body['documentation_url']}")
+            if parts:
+                return " | ".join(parts)
+
+        text = response.text.strip()
+        if text.startswith(("<", "\ufeff<")):
+            return (
+                "the server returned HTML rather than a JSON API response, which "
+                "usually means the URL points at the web interface instead of the "
+                "API endpoint"
+            )
+        if text:
+            return text[:200]
+        return "no error detail was returned"
+
     def warn_failure(self, response: httpx.Response, subject: str) -> None:
         """Surface a rejected request along with the API's own explanation.
 
@@ -196,18 +310,11 @@ class ApiBase:
         403 from an IP allow list or SSO enforcement is indistinguishable from
         a genuinely empty response.
         """
-        detail = ""
-        try:
-            message = response.json().get("message")
-            if message:
-                detail = f" - {message}"
-        except ValueError:
-            pass
-
         Output.warn(
             f"Failed to query {subject}: "
             f"{Output.bright(str(response.request.url))} returned "
-            f"{Output.bright(str(response.status_code))}{detail}"
+            f"{Output.bright(str(response.status_code))} - "
+            f"{self.describe_failure(response)}"
         )
         logger.warning(
             f"Request for {subject} failed with {response.status_code}: "

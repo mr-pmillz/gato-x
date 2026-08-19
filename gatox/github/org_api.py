@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from gatox.cli.output import Output
 from gatox.enumerate.ingest.ingest import DataIngestor
 from gatox.github.api_base import ApiBase, SubApi
 from gatox.github.gql_queries import GqlQueries
@@ -40,19 +41,20 @@ class OrgApi(SubApi):
         org_repos = await self._base.call_get(f"/orgs/{org}/repos")
 
         if org_repos.status_code != 200:
-            logger.warning(
-                "SSO does not seem to be enabled for this PAT!"
-                " Error message:"
-                f" {org_repos.json()['message']}"
+            # Indexing .json()['message'] here used to raise when the body was
+            # not the expected JSON error object, masking the real failure.
+            Output.warn(
+                "SSO does not seem to be enabled for this PAT! Error message: "
+                f"{self._base.describe_failure(org_repos)}"
             )
             return False
 
         result = await self._base.call_get(f"/repos/{repository}")
         if result.status_code == 403:
-            logger.warning(
-                "SSO does not seem to be enabled for this PAT! However,"
-                "this PAT does have some access to the GitHub Enterprise. "
-                f"Error message: {result.json()['message']}"
+            Output.warn(
+                "SSO does not seem to be enabled for this PAT! However, this "
+                "PAT does have some access to the GitHub Enterprise. Error "
+                f"message: {self._base.describe_failure(result)}"
             )
             return False
         else:
@@ -67,10 +69,7 @@ class OrgApi(SubApi):
             if runner_info["total_count"] > 0:
                 return runner_info
         else:
-            logger.warning(
-                f"Unable to query runners for {org}! This is likely due to the"
-                " PAT permission level!"
-            )
+            self._base.warn_failure(result, f"self-hosted runners for {org}")
         return None
 
     async def get_org_repo_names_graphql(self, org: str, type: str) -> list[str]:

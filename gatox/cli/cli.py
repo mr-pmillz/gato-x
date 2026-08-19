@@ -801,10 +801,14 @@ def configure_parser_general(parser, subcommand=False):
         ["--api-url", "-u"],
         help=(
             f"{Fore.RED}{Output.bright('[Experimental]')}\n"
-            "Github API URL to target. \n"
+            "GitHub URL to target. Paste the URL you use in the browser and\n"
+            "gato-x derives the REST and GraphQL endpoints from it:\n"
+            "  https://SUBDOMAIN.ghe.com  -> https://api.SUBDOMAIN.ghe.com\n"
+            "  https://ghes.example.com   -> https://ghes.example.com/api/v3\n"
+            "An explicit API base is accepted too.\n"
             "Defaults to 'https://api.github.com'"
         ),
-        metavar="https://api.github-url.com/api/v3",
+        metavar="https://subdomain.ghe.com",
         default=default(None),
         required=False,
     )

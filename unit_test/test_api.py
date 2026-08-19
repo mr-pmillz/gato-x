@@ -1,10 +1,13 @@
+import json
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from gatox.cli.output import Output
 from gatox.github.api import Api
+from gatox.github.api_base import ApiBase, resolve_api_endpoints
 
 logging.root.setLevel(logging.DEBUG)
 
@@ -123,6 +126,55 @@ async def test_handle_ratelimit(mock_time):
             "https://api.sub.ghe.com",
             "https://api.sub.ghe.com/graphql",
         ),
+        # The URL an operator actually has is the one in their browser. Each
+        # deployment shape must resolve to its own API host from that alone.
+        (
+            "https://sub.ghe.com",
+            "https://api.sub.ghe.com",
+            "https://api.sub.ghe.com/graphql",
+        ),
+        (
+            "https://sub.ghe.com/orgs/testOrg",
+            "https://api.sub.ghe.com",
+            "https://api.sub.ghe.com/graphql",
+        ),
+        (
+            "sub.ghe.com",
+            "https://api.sub.ghe.com",
+            "https://api.sub.ghe.com/graphql",
+        ),
+        (
+            "https://github.com",
+            "https://api.github.com",
+            "https://api.github.com/graphql",
+        ),
+        (
+            "https://github.com/testOrg/testRepo",
+            "https://api.github.com",
+            "https://api.github.com/graphql",
+        ),
+        (
+            "https://api.github.com",
+            "https://api.github.com",
+            "https://api.github.com/graphql",
+        ),
+        # A bare GHES hostname must gain /api/v3 for REST and /api/graphql for
+        # GraphQL -- /api/v3/graphql is not a route.
+        (
+            "https://ghes.example.com",
+            "https://ghes.example.com/api/v3",
+            "https://ghes.example.com/api/graphql",
+        ),
+        (
+            "https://ghes.example.com:8443",
+            "https://ghes.example.com:8443/api/v3",
+            "https://ghes.example.com:8443/api/graphql",
+        ),
+        (
+            "http://ghes.example.com",
+            "http://ghes.example.com/api/v3",
+            "http://ghes.example.com/api/graphql",
+        ),
     ],
 )
 def test_graphql_url_derived_from_api_url(github_url, expected_rest, expected_graphql):
@@ -227,3 +279,104 @@ def test_ghes_api_url_keeps_api_v3_prefix():
         api._build_url("/orgs/testOrg") == "https://ghes.corp.local/api/v3/orgs/testOrg"
     )
     assert api.graphql_url == "https://ghes.corp.local/api/graphql"
+
+
+def test_browser_url_reaches_the_ghe_com_api_host():
+    """The web host serves HTML: routes must be built against api.SUB.ghe.com."""
+    api = Api(
+        "ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        github_url="https://sub.ghe.com",
+    )
+
+    assert api._build_url("/orgs/testOrg") == "https://api.sub.ghe.com/orgs/testOrg"
+    assert api._build_url("/user") == "https://api.sub.ghe.com/user"
+    assert api._build_url("/graphql") == "https://api.sub.ghe.com/graphql"
+
+
+def test_browser_url_for_ghes_gains_api_v3():
+    """A bare GHES hostname is not the REST base; /api/v3 must be appended."""
+    api = Api(
+        "ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        github_url="https://ghes.example.com",
+    )
+
+    assert (
+        api._build_url("/orgs/testOrg")
+        == "https://ghes.example.com/api/v3/orgs/testOrg"
+    )
+    assert api._build_url("/graphql") == "https://ghes.example.com/api/graphql"
+
+
+def test_ghe_com_keeps_certificate_verification():
+    """ghe.com is GitHub operated with a public CA: never send the PAT blind."""
+    api = Api(
+        "ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        github_url="https://sub.ghe.com",
+    )
+
+    assert api.verify_ssl is True
+    assert api.is_github_cloud is True
+    assert api.is_public_github is False
+
+
+def test_ghes_relaxes_certificate_verification():
+    """GHES is commonly fronted by a private CA, so verification is relaxed."""
+    api = Api(
+        "ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        github_url="https://ghes.example.com",
+    )
+
+    assert api.verify_ssl is False
+    assert api.is_github_cloud is False
+
+
+def test_resolve_api_endpoints_rejects_unparseable_url():
+    with pytest.raises(ValueError):
+        resolve_api_endpoints("https:///nohost")
+
+
+@pytest.mark.parametrize(
+    "status,body,headers,expected",
+    [
+        (
+            403,
+            json.dumps(
+                {
+                    "message": (
+                        "Although you appear to have the correct authorization "
+                        "credentials, the `acme` organization has an IP allow "
+                        "list enabled, and 203.0.113.5 is not permitted to "
+                        "access this resource."
+                    ),
+                    "documentation_url": "https://docs.github.com/rest",
+                }
+            ),
+            {"Content-Type": "application/json"},
+            "IP allow list enabled",
+        ),
+        (
+            401,
+            json.dumps({"message": "Bad credentials"}),
+            {"Content-Type": "application/json"},
+            "Bad credentials",
+        ),
+        # Hitting the web host instead of the API returns a rendered page.
+        (
+            404,
+            "<!DOCTYPE html><html><body>Not Found</body></html>",
+            {"Content-Type": "text/html"},
+            "returned HTML rather than a JSON API response",
+        ),
+        (500, "", {}, "no error detail was returned"),
+    ],
+)
+def test_describe_failure_surfaces_the_api_explanation(status, body, headers, expected):
+    """The operator needs GitHub's own message, not a guess at the cause."""
+    response = httpx.Response(
+        status_code=status,
+        content=body,
+        headers=headers,
+        request=httpx.Request("GET", "https://api.sub.ghe.com/orgs/acme"),
+    )
+
+    assert expected in ApiBase.describe_failure(response)
