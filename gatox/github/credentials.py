@@ -88,9 +88,20 @@ class RefreshingProvider(CredentialProvider):
     #: Renew this far ahead of the stated expiry.
     REFRESH_MARGIN = timedelta(seconds=60)
 
+    #: Never re-mint more often than this. Without a floor, a credential
+    #: whose lifetime is shorter than REFRESH_MARGIN -- a short-lived token,
+    #: or clock skew that makes one look expired -- is never "usable", so
+    #: every single request mints a replacement and hammers the endpoint.
+    MIN_REUSE = timedelta(seconds=30)
+
+    #: Stop using a token this long before it actually expires, when its
+    #: lifetime is too short for the full margin to apply.
+    EXPIRY_BUFFER = timedelta(seconds=10)
+
     def __init__(self) -> None:
         self._token: str | None = None
         self._expires_at: datetime | None = None
+        self._renew_at: datetime | None = None
         self._lock = asyncio.Lock()
 
     @property
@@ -108,9 +119,23 @@ class RefreshingProvider(CredentialProvider):
 
     def _is_usable(self) -> bool:
         """Whether the cached token is still safely inside its lifetime."""
-        if self._token is None or self._expires_at is None:
+        if self._token is None or self._renew_at is None:
             return False
-        return datetime.now(timezone.utc) < self._expires_at - self.REFRESH_MARGIN
+        return datetime.now(timezone.utc) < self._renew_at
+
+    def _compute_renew_at(self, expires_at: datetime) -> datetime:
+        """When the cached token should be replaced.
+
+        Normally that is one margin before expiry. When the lifetime is
+        shorter than the margin the token would be born already stale, so
+        it is instead held for a short floor -- otherwise every request
+        mints a fresh one.
+        """
+        now = datetime.now(timezone.utc)
+        renew_at = expires_at - self.REFRESH_MARGIN
+        if renew_at <= now:
+            renew_at = max(now + self.MIN_REUSE, expires_at - self.EXPIRY_BUFFER)
+        return renew_at
 
     async def get_token(self) -> str:
         if self._is_usable():
@@ -138,6 +163,7 @@ class RefreshingProvider(CredentialProvider):
         token, expires_at = await self._mint()
         self._token = token
         self._expires_at = expires_at
+        self._renew_at = self._compute_renew_at(expires_at)
         logger.debug(
             "Renewed %s; expires at %s", self.describe(), expires_at.isoformat()
         )

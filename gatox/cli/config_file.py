@@ -35,6 +35,7 @@ casing at the point of use.
 
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 import re
@@ -310,3 +311,94 @@ def split_by_parser(
             unknown.append(key)
 
     return general, specific, unknown
+
+
+def _coerce_one(dest, action, value):
+    """Apply one flag's own type and choices rules to a config value.
+
+    argparse validates values it parses off the command line, but it does
+    not validate defaults. Without this, ``log_level: NOT_A_LEVEL`` in the
+    config file sails past the parser and blows up much later inside
+    ``logging``, with a traceback that says nothing about the config file.
+
+    Args:
+        dest: The argparse destination, used in error messages.
+        action: The argparse Action that owns the flag.
+        value: The value read from the config file.
+
+    Returns:
+        The value, coerced to the flag's type where needed.
+
+    Raises:
+        ConfigError: If the value is not usable for this flag.
+    """
+    flag = action.option_strings[0] if action.option_strings else dest
+    is_flag = isinstance(
+        action, (argparse._StoreTrueAction, argparse._StoreFalseAction)
+    )
+
+    if is_flag:
+        if not isinstance(value, bool):
+            raise ConfigError(
+                f"{dest}: {flag} is a switch, so it needs true or false, not {value!r}."
+            )
+        return value
+
+    takes_many = action.nargs in ("*", "+") or isinstance(
+        action, argparse._AppendAction
+    )
+    if takes_many:
+        items = value if isinstance(value, list) else [value]
+    else:
+        if isinstance(value, list):
+            raise ConfigError(f"{dest}: {flag} takes a single value, not a list.")
+        items = [value]
+
+    coerced = []
+    for item in items:
+        if callable(action.type) and not isinstance(item, bool):
+            try:
+                item = action.type(str(item) if not isinstance(item, str) else item)
+            except Exception as exc:  # noqa: BLE001 -- reported with context
+                raise ConfigError(
+                    f"{dest}: {item!r} is not valid for {flag} ({exc})"
+                ) from exc
+        if action.choices is not None and item not in action.choices:
+            raise ConfigError(
+                f"{dest}: {item!r} is not valid for {flag}. "
+                f"Choose from {', '.join(map(str, action.choices))}."
+            )
+        coerced.append(item)
+
+    return coerced if takes_many else coerced[0]
+
+
+def coerce_values(values, parsers):
+    """Validate config values against the flags that own them.
+
+    Args:
+        values: Flattened config values.
+        parsers: Parsers to look for each flag in, most specific first.
+
+    Returns:
+        ``(coerced, errors)``. Keys with no matching flag pass through
+        untouched; the caller reports those separately as unknown.
+    """
+    actions_by_dest = {}
+    for parser in parsers:
+        if parser is None:
+            continue
+        for action in parser._actions:
+            actions_by_dest.setdefault(action.dest, action)
+
+    coerced, errors = {}, []
+    for dest, value in values.items():
+        action = actions_by_dest.get(dest)
+        if action is None:
+            coerced[dest] = value
+            continue
+        try:
+            coerced[dest] = _coerce_one(dest, action, value)
+        except ConfigError as exc:
+            errors.append(str(exc))
+    return coerced, errors

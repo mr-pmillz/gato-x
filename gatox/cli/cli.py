@@ -21,6 +21,7 @@ from gatox.cli.config_file import (
     SUBCOMMAND_ALIASES,
     ConfigError,
     apply_env_overrides,
+    coerce_values,
     detect_subcommand,
     load_config_file,
     merge_config,
@@ -208,6 +209,13 @@ def apply_config_defaults(argv, parser, subparsers_by_name):
     subcommand_dests = (
         {action.dest for action in subparser._actions} if subparser else set()
     )
+
+    values, value_errors = coerce_values(values, [subparser, parser])
+    if value_errors:
+        parser.error(
+            f"{Fore.RED}[!]{Style.RESET_ALL} Invalid values in {path}:\n  "
+            + "\n  ".join(value_errors)
+        )
 
     general, specific, unknown_keys = split_by_parser(
         values, general_dests, subcommand_dests

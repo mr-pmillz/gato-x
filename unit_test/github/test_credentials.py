@@ -63,13 +63,23 @@ async def test_refreshing_provider_mints_once_while_valid():
     assert provider.is_refreshable is True
 
 
-async def test_refreshing_provider_remints_inside_margin():
-    # A lifetime shorter than the refresh margin means the token is never
-    # considered usable, so every call re-mints.
-    provider = CountingProvider(lifetime_seconds=30)
+async def test_refreshing_provider_remints_once_past_the_renewal_point():
+    provider = CountingProvider(lifetime_seconds=3600)
     assert await provider.get_token() == "token-1"
+
+    # Move the renewal point into the past, as elapsed time would.
+    provider._renew_at = datetime.now(timezone.utc) - timedelta(seconds=1)
     assert await provider.get_token() == "token-2"
     assert provider.mint_count == 2
+
+
+async def test_lifetime_shorter_than_the_margin_does_not_remint_every_call():
+    """The token is held for a floor instead of being re-minted constantly."""
+    provider = CountingProvider(lifetime_seconds=30)
+    first = await provider.get_token()
+    for _ in range(10):
+        assert await provider.get_token() == first
+    assert provider.mint_count == 1
 
 
 async def test_concurrent_gets_collapse_into_one_mint():
@@ -149,17 +159,50 @@ async def test_installation_token_expiry_is_read_from_the_response():
     assert timedelta(minutes=55) < remaining <= timedelta(minutes=60)
 
 
-async def test_short_lived_installation_token_is_reminted_each_call():
+async def test_short_lived_token_is_reused_rather_than_reminted_every_call():
+    """A token shorter-lived than the margin must not cause a mint storm.
+
+    Two minutes is inside the five-minute refresh margin, so a naive
+    "renew one margin before expiry" rule would consider it stale the
+    moment it arrives and re-mint on every single request.
+    """
     calls = []
 
     async def minter(installation_id):
         calls.append(installation_id)
-        # Two minutes is inside the five-minute refresh margin.
         return _token_response(f"ghs_{len(calls)}", minutes=2)
 
     provider = InstallationTokenProvider(minter, "1")
-    assert await provider.get_token() == "ghs_1"
-    assert await provider.get_token() == "ghs_2"
+    first = await provider.get_token()
+    for _ in range(25):
+        assert await provider.get_token() == first
+    assert len(calls) == 1
+
+
+async def test_already_expired_token_still_honours_the_reuse_floor():
+    calls = []
+
+    async def minter(installation_id):
+        calls.append(installation_id)
+        return _token_response(f"ghs_{len(calls)}", minutes=-5)
+
+    provider = InstallationTokenProvider(minter, "1")
+    first = await provider.get_token()
+    assert await provider.get_token() == first
+    assert len(calls) == 1
+
+
+async def test_concurrent_burst_on_a_short_lived_token_mints_once():
+    calls = []
+
+    async def minter(installation_id):
+        calls.append(installation_id)
+        return _token_response(f"ghs_{len(calls)}", minutes=2)
+
+    provider = InstallationTokenProvider(minter, "1")
+    tokens = await asyncio.gather(*(provider.get_token() for _ in range(20)))
+    assert len(calls) == 1
+    assert len(set(tokens)) == 1
 
 
 async def test_missing_expiry_falls_back_to_one_hour():

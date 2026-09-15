@@ -88,6 +88,16 @@ attack:
   timeout: 60            # integer
 ```
 
+Values are checked against the same rules the flag enforces on the command
+line, so a mistake is reported against the config file rather than surfacing
+as an unrelated crash later:
+
+```
+error: Invalid values in /home/you/.config/gato-x/config.yaml:
+  log_level: 'VERBOSE' is not valid for --log-level. Choose from DEBUG, INFO, WARNING, ERROR, CRITICAL.
+  skip_runners: --skip-runners is a switch, so it needs true or false, not 'yes'.
+```
+
 Paths understand `~`:
 
 ```yaml

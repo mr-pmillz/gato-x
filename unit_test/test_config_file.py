@@ -443,3 +443,93 @@ def test_workflow_loader_still_keeps_on_as_a_string():
 
     parsed = yaml.load("on: push\njobs: {}\n", Loader=WorkflowLoader)
     assert "on" in parsed and parsed["on"] == "push"
+
+
+# --------------------------------------------------------------------------
+# Value validation
+#
+# argparse validates what it parses off the command line but NOT defaults,
+# so a bad config value used to sail through and crash somewhere unrelated.
+# --------------------------------------------------------------------------
+
+
+def _coerce(values, argv=()):
+    from gatox.cli.config_file import coerce_values
+
+    parser = _general_parser()
+    return coerce_values(values, [parser])
+
+
+def test_invalid_choice_is_rejected_with_the_valid_options():
+    _, errors = _coerce({"log_level": "NOT_A_LEVEL"})
+    assert len(errors) == 1
+    assert "log_level" in errors[0] and "DEBUG" in errors[0]
+
+
+def test_valid_choice_passes():
+    coerced, errors = _coerce({"log_level": "DEBUG"})
+    assert errors == [] and coerced["log_level"] == "DEBUG"
+
+
+def test_switch_rejects_a_non_boolean():
+    from gatox.cli.config_file import coerce_values
+    from gatox.cli.enumeration.config import configure_parser_enumerate
+
+    sub = argparse.ArgumentParser()
+    configure_parser_enumerate(sub)
+    _, errors = coerce_values({"skip_runners": "yes-please"}, [sub])
+
+    assert len(errors) == 1 and "true or false" in errors[0]
+
+
+def test_switch_accepts_a_boolean():
+    from gatox.cli.config_file import coerce_values
+    from gatox.cli.enumeration.config import configure_parser_enumerate
+
+    sub = argparse.ArgumentParser()
+    configure_parser_enumerate(sub)
+    coerced, errors = coerce_values({"skip_runners": False}, [sub])
+
+    assert errors == [] and coerced["skip_runners"] is False
+
+
+def test_scalar_flag_rejects_a_list():
+    _, errors = _coerce({"api_url": ["a", "b"]})
+    assert len(errors) == 1 and "single value" in errors[0]
+
+
+def test_typed_flag_coerces_a_string():
+    from gatox.cli.attack.config import configure_parser_attack
+    from gatox.cli.config_file import coerce_values
+
+    sub = argparse.ArgumentParser()
+    configure_parser_attack(sub)
+    coerced, errors = coerce_values({"timeout": "60"}, [sub])
+
+    assert errors == []
+    assert coerced["timeout"] == 60 and isinstance(coerced["timeout"], int)
+
+
+def test_typed_flag_rejects_an_uncoercible_value():
+    from gatox.cli.attack.config import configure_parser_attack
+    from gatox.cli.config_file import coerce_values
+
+    sub = argparse.ArgumentParser()
+    configure_parser_attack(sub)
+    _, errors = coerce_values({"timeout": "not-a-number"}, [sub])
+
+    assert len(errors) == 1 and "timeout" in errors[0]
+
+
+def test_unknown_keys_pass_through_untouched():
+    coerced, errors = _coerce({"totally_made_up": "x"})
+    assert errors == [] and coerced["totally_made_up"] == "x"
+
+
+def test_bad_config_value_exits_instead_of_crashing_later(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text("defaults:\n  log_level: NOT_A_LEVEL\n")
+    parser = _general_parser()
+
+    with pytest.raises(SystemExit):
+        cli_module.apply_config_defaults(["--config", str(path)], parser, {})

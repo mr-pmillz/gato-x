@@ -80,16 +80,18 @@ async def test_provider_token_is_used_and_pat_attribute_tracks_it():
 
 
 async def test_expired_token_is_renewed_before_the_next_request():
-    # A zero-second lifetime means the cached token is never usable.
-    provider = RotatingProvider(lifetime_seconds=0)
+    provider = RotatingProvider()
     client = AsyncMock()
     client.get.return_value = _response()
     api = Api(credentials=provider, client=client)
 
     await api.call_get("/user")
+    # Age the credential out, as elapsed time would.
+    provider._renew_at = datetime.now(timezone.utc) - timedelta(seconds=1)
     await api.call_get("/user")
 
     assert provider.mint_count == 2
+    assert client.get.call_args.kwargs["headers"]["Authorization"] == "Bearer ghs_2"
 
 
 async def test_valid_token_is_not_reminted():
