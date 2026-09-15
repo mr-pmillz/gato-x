@@ -21,6 +21,9 @@
 * [Overview](user-guide/advanced/index.md)
 * [Understanding GitHub Actions Vulnerabilities](user-guide/advanced/vulnerabilities.md)
 * [Fine-Grained Token Enumeration](user-guide/advanced/fine-grained-tokens.md)
+* [GitHub App Authentication](user-guide/advanced/github-app-auth.md)
+* [Configuration File](user-guide/advanced/configuration-file.md)
+* [Docker Usage](user-guide/advanced/docker.md)
 * [Complex Attack Scenarios](user-guide/advanced/complex-attacks.md)
 
 ## Additional Resources

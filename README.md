@@ -47,10 +47,29 @@ Gato-X contains a powerful scanning engine for GitHub Actions vulnerabilities. I
 
 ## Quick Start
 
+### Run with Docker
+
+```bash
+docker run --rm -e GH_TOKEN ghcr.io/mr-pmillz/gato-x enumerate -t acme-corp
+```
+
+Multi-arch images (`linux/amd64`, `linux/arm64`) are published to
+`ghcr.io/mr-pmillz/gato-x`. See [Docker Usage](docs/user-guide/advanced/docker.md).
+
+Any command line option can also live in `~/.config/gato-x/config.yaml` --
+see [Configuration File](docs/user-guide/advanced/configuration-file.md).
+
+
 ### Search For GitHub Actions Vulnerabilities at GitHub Scale
 
 First, create a GitHub PAT with the `repo` scope. Set that PAT to the
 `GH_TOKEN` environment variable.
+
+Gato-X can also authenticate as a GitHub App with `--app-id` and `--app-key`
+(or `GH_APP_ID` / `GH_APP_KEY`), in which case it mints and renews the JWT and
+installation token itself, so a long run is not capped at the one-hour
+installation token lifetime. See
+[GitHub App Authentication](docs/user-guide/advanced/github-app-auth.md).
 
 Next, use the search feature to retrieve a list of candidate repositories:
 
@@ -103,14 +122,31 @@ See documentation for additional options such as specifying workflow name, branc
 
 Gato supports OS X and Linux with at least **Python 3.10**.
 
-Gato-X is published on PyPi, so you can simply install it with `pip install gato-x`
+> **Note:** This is a fork of [AdnaneKhan/gato-x](https://github.com/AdnaneKhan/gato-x)
+> and is **not** on PyPI under the `gato-x` name -- `pip install gato-x` fetches
+> the upstream project, not this fork.
 
-In order to install the tool from source, simply clone the repository and use `pip install`. 
-
-We recommend performing this within a virtual environment.
+The quickest way to run this fork is the container image:
 
 ```
-git clone https://github.com/AdnaneKhan/gato-x
+docker run --rm -e GH_TOKEN ghcr.io/mr-pmillz/gato-x enumerate -t acme-corp
+```
+
+To install from source, we recommend [uv](https://github.com/astral-sh/uv),
+which is also what CI uses:
+
+```
+git clone https://github.com/mr-pmillz/gato-x
+cd gato-x
+uv venv
+uv pip install .
+source .venv/bin/activate
+```
+
+Or with pip and a plain virtual environment:
+
+```
+git clone https://github.com/mr-pmillz/gato-x
 cd gato-x
 python3 -m venv venv
 source venv/bin/activate
@@ -118,7 +154,7 @@ pip install .
 ```
 OR You can use pipx
 ```
-git clone https://github.com/AdnaneKhan/gato-x
+git clone https://github.com/mr-pmillz/gato-x
 cd gato-x
 pipx install .
 ```

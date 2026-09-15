@@ -69,4 +69,4 @@ These tools can be called programmatically or via compatible agent UIs.
 - Make sure your `GH_TOKEN` is valid and has the necessary scopes for your use case.
 - If you encounter issues, check the logs/output of the MCP server for error messages.
 
-For more details, see the [Gato-X repository](https://github.com/AdnaneKhan/gato-x) or the main documentation.
+For more details, see the [Gato-X repository](https://github.com/mr-pmillz/gato-x) or the main documentation.

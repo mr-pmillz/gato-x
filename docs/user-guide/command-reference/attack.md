@@ -35,6 +35,15 @@ gato-x a [options]
 | `--oidc`, `-oi` | Attack to mint a GitHub Actions OIDC token for a chosen audience |
 | `--interact` | Connect to a C2 repository and interact with connected runners |
 | `--payload-only` | Generate payloads for manually deploying runner on runner |
+| `--release-booby-trap`, `-rbt` | Plant a dormant workflow behind a release that fires when a maintainer edits it |
+
+### Release Booby Trap Options
+
+| Option | Description |
+|--------|-------------|
+| `--booby-payload`, `-bp` | Path to a custom workflow YAML to plant. Defaults to a built-in OIDC-exfiltration template |
+| `--booby-publish` | Publish the release rather than leaving it as a draft |
+| `--dry-run` | Show each API call that would be made without performing the attack |
 
 ### Workflow Attack Options
 
@@ -106,6 +115,43 @@ gato-x a --payload-only --target-os linux --target-arch x64
 ```bash
 gato-x a --interact --c2-repo MyOrg/C2Repo
 ```
+
+### Plant a Release Booby Trap
+
+```bash
+gato-x attack -t org/repo --release-booby-trap --dry-run
+```
+
+Drop `--dry-run` to perform it, and add `--booby-publish` to publish the
+release instead of leaving a draft. A custom payload can be supplied with
+`--booby-payload ./my-workflow.yml`.
+
+## Release Booby Trap Attack Process
+
+This technique requires `contents: write` on the target.
+
+1. An orphan commit is built through the Git Data API that tree-splices a
+   workflow into `.github/workflows/`. The workflow listens on
+   `release: [edited, deleted]`.
+2. A draft release is created pointing at a clean commit on the default
+   branch, then PATCHed to the orphan SHA and published. The PATCH avoids the
+   workflow-scope check GitHub applies at release *creation*.
+3. GitHub's loop prevention suppresses the immediate dispatch, so the release
+   sits dormant and nothing runs.
+4. When any non-bot actor interacts with the release, `release: edited` fires
+   without loop prevention and the planted workflow executes.
+
+Because the payload lives on an orphan commit, it never appears on the default
+branch and is not visible in the ordinary commit history.
+
+### Detection and mitigation
+
+- Audit releases whose `target_commitish` does not reach the default branch.
+- Alert on workflow runs whose workflow file is absent from the branch head.
+- Require `actions: write` review for release automation, and restrict
+  `contents: write` for third-party apps and tokens.
+- Review the Git Data API audit log for blob/tree/commit creation that is not
+  followed by a ref update.
 
 ## Runner-on-Runner Attack Process
 

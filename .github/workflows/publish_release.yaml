@@ -14,7 +14,7 @@ jobs:
       version_bumped: ${{ steps.check.outputs.version_bumped }}
       version: ${{ steps.check.outputs.version }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2  # Ensure access to the previous commit
 
@@ -41,10 +41,10 @@ jobs:
       attestations: write
     if: needs.check_version.outputs.version_bumped == 'true' || github.event_name == 'workflow_dispatch'
     steps:
-      - uses: actions/checkout@v6 
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.x'
       - name: Install pypa/build
@@ -55,47 +55,45 @@ jobs:
           --user
       - name: Build Binary wheel Source Tarball
         run: python3 -m build
-      - uses: actions/attest-build-provenance@v4
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: 'dist/gato_x-*'
       - name: Store Distribution Packages
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: python-package-distributions
           path: dist/
   release:
-    name: Publish Gato-X Distribution 📦 to PyPI
+    name: Publish Gato-X GitHub Release 📦
     needs: [check_version, build_artifact]
     if: needs.check_version.outputs.version_bumped == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    environment:
-      name: release
-      url: https://pypi.org/p/gato-x
     permissions:
       id-token: write
       contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Download artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: python-package-distributions
           path: dist/
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.x'
-      - name: Publish Distribution
-        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
+      # This fork does not own the `gato-x` name on PyPI, so releases are
+      # distributed as signed GitHub Release artifacts and as container
+      # images on ghcr.io/mr-pmillz/gato-x (see docker_publish.yaml).
       - name: Sign the dists with Sigstore
-        uses: sigstore/gh-action-sigstore-python@04cffa1d795717b140764e8b640de88853c92acc
+        uses: sigstore/gh-action-sigstore-python@790bc6befb9d733738f18d8f895854b453640ec9 # v3.5.0
         with:
           inputs: >-
             ./dist/*.tar.gz
             ./dist/*.whl
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: v${{ needs.check_version.outputs.version }}
           name: Gato-X Release v${{ needs.check_version.outputs.version }}

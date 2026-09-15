@@ -5,12 +5,14 @@ Exposes all enumerate functionality as LLM-friendly tools.
 
 import asyncio
 import os
+from contextlib import asynccontextmanager
 
 from fastmcp import Context, FastMCP
 from pydantic import BaseModel, Field, field_validator
 
 from gatox.cli.output import Output
 from gatox.enumerate.enumerate import Enumerator
+from gatox.github.app_session import AppSession
 
 app = FastMCP(
     name="Gato-X MCP Server",
@@ -20,7 +22,12 @@ app = FastMCP(
 
 class MCPAuthParams(BaseModel):
     """
-    Authentication and proxy options for GitHub enumeration. The GitHub Personal Access Token (PAT) is required and should be provided via the GH_TOKEN environment variable. If not set, an error will be raised. SOCKS and HTTP proxies are mutually exclusive.
+    Authentication and proxy options for GitHub enumeration.
+
+    Authenticate either with a GitHub Personal Access Token via the GH_TOKEN
+    environment variable, or as a GitHub App via GH_APP_ID and GH_APP_KEY
+    (App credentials take precedence, and Gato-X renews their tokens itself).
+    SOCKS and HTTP proxies are mutually exclusive.
     """
 
     socks_proxy: str | None = Field(
@@ -49,12 +56,46 @@ class MCPAuthParams(BaseModel):
             raise ValueError("Cannot use both SOCKS and HTTP proxy at the same time.")
         return v
 
+    app_id: str | None = Field(
+        None,
+        description="GitHub App ID to authenticate as (optional, defaults to GH_APP_ID)",
+    )
+    app_key: str | None = Field(
+        None,
+        description=(
+            "Path to the GitHub App private key PEM file, or the PEM itself "
+            "(optional, defaults to GH_APP_KEY)"
+        ),
+    )
+    installation_id: str | None = Field(
+        None,
+        description=(
+            "GitHub App installation to use instead of resolving one from the "
+            "target (optional, defaults to GH_APP_INSTALLATION_ID)"
+        ),
+    )
+
+    @property
+    def app_credentials(self) -> tuple[str, str] | None:
+        """Return ``(app_id, private_key)`` when App auth is configured."""
+        app_id = self.app_id or os.environ.get("GH_APP_ID")
+        app_key = self.app_key or os.environ.get("GH_APP_KEY")
+        if app_id and app_key:
+            return (app_id, app_key)
+        return None
+
+    @property
+    def resolved_installation_id(self) -> str | None:
+        """Explicitly requested App installation, if any."""
+        return self.installation_id or os.environ.get("GH_APP_INSTALLATION_ID")
+
     @property
     def pat(self) -> str:
         pat = os.environ.get("GH_TOKEN")
         if not pat:
             raise ValueError(
-                "No 'GH_TOKEN' environment variable set! Please provide a GitHub PAT via GH_TOKEN."
+                "No 'GH_TOKEN' environment variable set! Provide a GitHub PAT via "
+                "GH_TOKEN, or GitHub App credentials via GH_APP_ID and GH_APP_KEY."
             )
         return pat
 
@@ -115,6 +156,12 @@ class ValidatePATInput(MCPAuthParams):
 
 
 def get_enumerator(params: MCPAuthParams):
+    """Build a PAT-authenticated enumerator.
+
+    Kept for callers that only ever use a PAT; App authentication needs the
+    async :func:`enumerator_for` because resolving an installation and
+    minting its token are network calls.
+    """
     Output(False, suppress=True)  # Suppress other stdout
     return Enumerator(
         pat=params.pat,
@@ -124,6 +171,65 @@ def get_enumerator(params: MCPAuthParams):
         github_url=params.github_url,
         ignore_workflow_run=params.ignore_workflow_run or False,
     )
+
+
+@asynccontextmanager
+async def enumerator_for(params: MCPAuthParams, target: str | None = None):
+    """Yield an enumerator authenticated by PAT or GitHub App.
+
+    With App credentials the installation token renews itself for as long as
+    the context is open, so an enumeration is not capped at one hour.
+
+    Args:
+        params: Auth and proxy options.
+        target: Org, ``owner/repo`` or user used to resolve an App
+            installation. Unused for PAT auth.
+    """
+    Output(False, suppress=True)  # Suppress other stdout
+
+    session = None
+    api_client = None
+    app_permissions = None
+    credentials = params.app_credentials
+
+    if credentials:
+        app_id, app_key = credentials
+        session = AppSession(
+            app_id,
+            app_key,
+            socks_proxy=params.socks_proxy,
+            http_proxy=params.http_proxy,
+            github_url=params.github_url,
+        )
+        await session.validate()
+
+        installation_id = params.resolved_installation_id
+        if installation_id:
+            api_client = await session.api_for_installation(installation_id)
+        elif target:
+            api_client = await session.api_for_target(target)
+        else:
+            await session.close()
+            raise ValueError(
+                "GitHub App authentication needs a target to resolve an "
+                "installation from; set GH_APP_INSTALLATION_ID for this tool."
+            )
+        app_permissions = session.app_permissions
+
+    try:
+        yield Enumerator(
+            pat=None if api_client else params.pat,
+            socks_proxy=params.socks_proxy,
+            http_proxy=params.http_proxy,
+            skip_log=params.skip_runners or False,
+            github_url=params.github_url,
+            ignore_workflow_run=params.ignore_workflow_run or False,
+            finegrained_permisions=(set(app_permissions) if app_permissions else None),
+            api_client=api_client,
+        )
+    finally:
+        if session:
+            await session.close()
 
 
 @app.tool()
@@ -157,8 +263,8 @@ async def enumerate_organization(ctx: Context, params: EnumerateOrganizationInpu
         debug_log.write(f"enumerate_organization called with params: {params}\n")
     await ctx.info(f"Enumerating organization: {params.target}")
     try:
-        enumerator = get_enumerator(params)
-        org = await enumerator.enumerate_organization(params.target)
+        async with enumerator_for(params, params.target) as enumerator:
+            org = await enumerator.enumerate_organization(params.target)
         await ctx.info(f"Enumeration complete for org: {params.target}")
         return org.toJSON() if org else {"error": "Enumeration failed"}
     except Exception as e:
@@ -191,8 +297,8 @@ async def enumerate_repository(ctx: Context, params: EnumerateRepositoryInput):
     """
     await ctx.info(f"Enumerating repository: {params.repository}")
     try:
-        enumerator = get_enumerator(params)
-        repo = await enumerator.enumerate_repo(params.repository)
+        async with enumerator_for(params, params.repository) as enumerator:
+            repo = await enumerator.enumerate_repo(params.repository)
         await ctx.info(f"Enumeration complete for repo: {params.repository}")
         return repo.toJSON() if repo else {"error": "Enumeration failed"}
     except Exception as e:
@@ -225,8 +331,9 @@ async def enumerate_repositories(ctx: Context, params: EnumerateRepositoriesInpu
     """
     await ctx.info(f"Enumerating repositories: {params.repositories}")
     try:
-        enumerator = get_enumerator(params)
-        repos = await enumerator.enumerate_repos(params.repositories)
+        target = params.repositories[0] if params.repositories else None
+        async with enumerator_for(params, target) as enumerator:
+            repos = await enumerator.enumerate_repos(params.repositories)
         await ctx.info(f"Enumeration complete for repos: {params.repositories}")
         return [r.toJSON() for r in repos]
     except Exception as e:
@@ -258,8 +365,8 @@ async def self_enumeration(ctx: Context, params: SelfEnumerationInput):
     """
     await ctx.info("Performing self-enumeration for authenticated user")
     try:
-        enumerator = get_enumerator(params)
-        result = await enumerator.self_enumeration()
+        async with enumerator_for(params) as enumerator:
+            result = await enumerator.self_enumeration()
         if not result:
             return {"error": "Self-enumeration failed"}
         orgs, repos = result
@@ -294,8 +401,8 @@ async def validate_pat(ctx: Context, params: ValidatePATInput):
     """
     await ctx.info("Validating GitHub PAT")
     try:
-        enumerator = get_enumerator(params)
-        orgs = await enumerator.validate_only()
+        async with enumerator_for(params) as enumerator:
+            orgs = await enumerator.validate_only()
         await ctx.info("PAT validation complete")
         return [org.toJSON() for org in orgs] if orgs else []
     except Exception as e:

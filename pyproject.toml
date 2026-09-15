@@ -10,6 +10,9 @@ readme = "README.md"
 authors = [
     {name = "Adnan Khan", email = "adnanthekhan@proton.me"}
 ]
+maintainers = [
+    {name = "mr-pmillz"}
+]
 requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3.10",
@@ -24,6 +27,13 @@ dependencies = [
     "networkx",
     "PyJWT[crypto]"
 ]
+
+[project.urls]
+Homepage = "https://github.com/mr-pmillz/gato-x"
+Documentation = "https://mr-pmillz.github.io/gato-x/"
+Repository = "https://github.com/mr-pmillz/gato-x"
+Issues = "https://github.com/mr-pmillz/gato-x/issues"
+Upstream = "https://github.com/AdnaneKhan/gato-x"
 
 [project.optional-dependencies]
 test = [
@@ -96,7 +106,7 @@ exclude = ["unit_test", "test"]
 pythonVersion = "3.10"
 typeCheckingMode = "basic"
 venvPath = "."
-venv = "venv"
+venv = ".venv"
 
 [project.scripts]
 gato-x = "gatox.main:entry"

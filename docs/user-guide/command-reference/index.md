@@ -26,6 +26,11 @@ These options are available across all commands:
 | `--http-proxy`, `-p` | HTTPS proxy to use for requests in HOST:PORT format |
 | `--no-color`, `-nc` | Removes all color from output |
 | `--api-url`, `-u` | GitHub URL to target (defaults to https://api.github.com) |
+| `--app-id` | GitHub App ID to authenticate as, instead of a PAT (env: `GH_APP_ID`) |
+| `--app-key` | Path to the App's private key PEM, or the PEM itself (env: `GH_APP_KEY`) |
+| `--installation-id` | Use a specific App installation instead of resolving one (env: `GH_APP_INSTALLATION_ID`) |
+| `--config` | Path to a YAML config file setting any option (env: `GATOX_CONFIG`) |
+| `--no-config` | Ignore config files; use only flags and environment variables |
 
 They may be passed either before or after the subcommand:
 

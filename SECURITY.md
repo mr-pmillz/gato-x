@@ -24,7 +24,7 @@ A security issue in Gato-X is defined as a bug or design flaw that could result 
 
 If you discover a security vulnerability as defined above, **please do not create a public GitHub issue**. Instead, report it privately via GitHub's reporting feature or send an email.
 
-- Email: security@adnanthekhan.com
+- Open a private security advisory at https://github.com/mr-pmillz/gato-x/security/advisories/new
 
 This allows us to triage and address the issue before public disclosure.
 
