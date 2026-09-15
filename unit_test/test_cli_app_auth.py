@@ -456,3 +456,35 @@ def test_app_parser_defines_every_option_its_handler_reads():
         "output_json",
     }
     assert required <= defined, f"missing: {sorted(required - defined)}"
+
+
+async def test_failed_app_setup_closes_the_session(monkeypatch, pem_file):
+    """build_app_api's caller never sees the session, so it must clean up."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from gatox.github.credentials import AppAuthError
+
+    args = _app_args(pem_file)
+    fake_session = AsyncMock()
+    fake_session.validate.side_effect = AppAuthError("bad key")
+    monkeypatch.setattr(cli_module, "AppSession", MagicMock(return_value=fake_session))
+
+    with pytest.raises(AppAuthError):
+        await cli_module.build_app_api(args, target="acme")
+
+    fake_session.close.assert_awaited_once()
+
+
+async def test_missing_target_also_closes_the_session(monkeypatch, pem_file):
+    from unittest.mock import AsyncMock, MagicMock
+
+    from gatox.github.credentials import AppAuthError
+
+    args = _app_args(pem_file)
+    fake_session = AsyncMock()
+    monkeypatch.setattr(cli_module, "AppSession", MagicMock(return_value=fake_session))
+
+    with pytest.raises(AppAuthError):
+        await cli_module.build_app_api(args, target=None)
+
+    fake_session.close.assert_awaited_once()

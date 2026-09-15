@@ -36,6 +36,12 @@ class GitHubAppAuth:
     #: GitHub refuses a JWT whose lifetime exceeds this.
     JWT_MAX_MINUTES = 10
 
+    #: Requesting the full ten minutes leaves no room for GitHub's clock
+    #: to sit behind ours: it measures exp against its own now, and
+    #: rejects anything beyond the cap. The same skew allowance that
+    #: backdates iat is applied here.
+    JWT_DEFAULT_MINUTES = 9
+
     #: Backdate ``iat`` by this much so a fast clock on our side does not
     #: produce a token GitHub considers issued in the future.
     CLOCK_SKEW_SECONDS = 60
@@ -90,11 +96,12 @@ class GitHubAppAuth:
 
         return self._private_key
 
-    def generate_jwt(self, expiration_minutes: int = JWT_MAX_MINUTES) -> str:
+    def generate_jwt(self, expiration_minutes: int = JWT_DEFAULT_MINUTES) -> str:
         """Generate a JWT for GitHub App authentication.
 
         Args:
-            expiration_minutes: JWT expiration time in minutes (max 10).
+            expiration_minutes: JWT lifetime in minutes; GitHub caps this
+                at 10 and the default leaves a minute of skew headroom.
 
         Returns:
             The generated JWT token.

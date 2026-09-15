@@ -67,15 +67,21 @@ _ConfigLoader.yaml_implicit_resolvers = {
     for key, value in yaml.resolver.Resolver.yaml_implicit_resolvers.items()
 }
 
-#: The YAML 1.1 boolean resolver, restored for config files only.
-_ConfigLoader.add_implicit_resolver(
-    "tag:yaml.org,2002:bool",
-    re.compile(
-        r"^(?:yes|Yes|YES|no|No|NO|true|True|TRUE|false|False|FALSE"
-        r"|on|On|ON|off|Off|OFF)$"
-    ),
-    list("yYnNtTfFoO"),
-)
+#: The YAML 1.1 boolean resolver, restored for config files only. Only
+#: added when it is genuinely absent, so re-adding does not leave two
+#: identical resolvers on every affected first character.
+if not any(
+    entry[0] == "tag:yaml.org,2002:bool"
+    for entry in _ConfigLoader.yaml_implicit_resolvers.get("t", [])
+):
+    _ConfigLoader.add_implicit_resolver(
+        "tag:yaml.org,2002:bool",
+        re.compile(
+            r"^(?:yes|Yes|YES|no|No|NO|true|True|TRUE|false|False|FALSE"
+            r"|on|On|ON|off|Off|OFF)$"
+        ),
+        list("yYnNtTfFoO"),
+    )
 
 #: Default location, overridable with ``--config`` or ``GATOX_CONFIG``.
 DEFAULT_CONFIG_PATH = Path("~/.config/gato-x/config.yaml")
@@ -182,7 +188,7 @@ def load_config_file(path: Path) -> dict[str, Any]:
     return parsed
 
 
-def detect_subcommand(argv: list[str]) -> str | None:
+def detect_subcommand(argv: list[str], value_flags=None) -> str | None:
     """Work out which subcommand is being run, before argparse parses.
 
     The config section is needed to build the parser defaults, which has to
@@ -191,12 +197,24 @@ def detect_subcommand(argv: list[str]) -> str | None:
 
     Args:
         argv: The raw argument list.
+        value_flags: Option strings that consume a following value, so
+            that value is not mistaken for the subcommand.
 
     Returns:
         The canonical subcommand name, or ``None`` if none is present.
     """
+    value_flags = value_flags or set()
+    skip_next = False
+
     for token in argv:
+        if skip_next:
+            # The value of an option, not a subcommand -- `--api-url a`
+            # must not be read as the `attack` alias.
+            skip_next = False
+            continue
         if token.startswith("-"):
+            if "=" not in token and token in value_flags:
+                skip_next = True
             continue
         canonical = SUBCOMMAND_ALIASES.get(token)
         if canonical:

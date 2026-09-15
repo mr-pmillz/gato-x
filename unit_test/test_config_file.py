@@ -533,3 +533,68 @@ def test_bad_config_value_exits_instead_of_crashing_later(tmp_path):
 
     with pytest.raises(SystemExit):
         cli_module.apply_config_defaults(["--config", str(path)], parser, {})
+
+
+# --------------------------------------------------------------------------
+# Subcommand detection must not mistake a flag's value for the subcommand
+# --------------------------------------------------------------------------
+
+
+def _value_flags():
+    return {
+        option
+        for action in _general_parser()._actions
+        if action.nargs != 0
+        for option in action.option_strings
+    }
+
+
+@pytest.mark.parametrize(
+    "argv,expected",
+    [
+        # A value that happens to equal an alias: "a" is the attack alias.
+        (["--api-url", "a", "enumerate", "-t", "x"], "enumerate"),
+        (["--config", "app", "enumerate"], "enumerate"),
+        (["--socks-proxy", "e", "search", "-q", "x"], "search"),
+        (["--app-key", "p", "persistence"], "persistence"),
+        # --flag=value consumes no following token.
+        (["--api-url=a", "enumerate"], "enumerate"),
+        # Switches take no value, so the next token is still fair game.
+        (["--no-color", "attack"], "attack"),
+        # A target after the subcommand is irrelevant; the subcommand won.
+        (["enumerate", "-t", "app"], "enumerate"),
+        (["attack", "--workflow"], "attack"),
+        ([], None),
+    ],
+)
+def test_flag_values_are_not_mistaken_for_the_subcommand(argv, expected):
+    assert detect_subcommand(argv, _value_flags()) == expected
+
+
+def test_wrong_section_is_not_applied_when_a_value_looks_like_an_alias(tmp_path):
+    """The real failure: the attack section applied to an enumerate run."""
+    from gatox.cli.enumeration.config import configure_parser_enumerate
+
+    path = tmp_path / "config.yaml"
+    path.write_text("enumerate:\n  skip_runners: true\nattack:\n  timeout: 99\n")
+
+    parser = _general_parser()
+    sub = argparse.ArgumentParser()
+    configure_parser_enumerate(sub)
+
+    cli_module.apply_config_defaults(
+        ["--config", str(path), "--api-url", "a", "enumerate"],
+        parser,
+        {"enumerate": sub},
+    )
+
+    assert sub.parse_args([]).skip_runners is True
+
+
+def test_config_loader_has_exactly_one_bool_resolver_per_character():
+    from gatox.cli.config_file import _ConfigLoader
+
+    for char in "tTfFyYnNoO":
+        entries = _ConfigLoader.yaml_implicit_resolvers.get(char, [])
+        bools = [e for e in entries if e[0] == "tag:yaml.org,2002:bool"]
+        assert len(bools) <= 1, f"{char!r} has {len(bools)} bool resolvers"

@@ -189,7 +189,13 @@ def apply_config_defaults(argv, parser, subparsers_by_name):
             )
         return {}
 
-    subcommand = detect_subcommand(argv)
+    value_flags = {
+        option
+        for action in parser._actions
+        if action.nargs != 0
+        for option in action.option_strings
+    }
+    subcommand = detect_subcommand(argv, value_flags)
     try:
         values, unknown_sections = merge_config(raw, subcommand)
     except ConfigError as exc:
@@ -325,18 +331,25 @@ async def build_app_api(args, target=None):
         http_proxy=args.http_proxy,
         github_url=args.api_url,
     )
-    await session.validate()
+    try:
+        await session.validate()
 
-    installation_id = getattr(args, "resolved_installation_id", None)
-    if installation_id:
-        api = await session.api_for_installation(installation_id)
-    else:
-        if not target:
-            raise AppAuthError(
-                "App authentication needs a target to resolve an installation "
-                "from. Pass --installation-id, or give the command a target."
-            )
-        api = await session.api_for_target(target)
+        installation_id = getattr(args, "resolved_installation_id", None)
+        if installation_id:
+            api = await session.api_for_installation(installation_id)
+        else:
+            if not target:
+                raise AppAuthError(
+                    "App authentication needs a target to resolve an "
+                    "installation from. Pass --installation-id, or give "
+                    "the command a target."
+                )
+            api = await session.api_for_target(target)
+    except BaseException:
+        # The caller only closes a session it was handed, so a failure
+        # here would strand the session's HTTP clients.
+        await session.close()
+        raise
 
     return session, api
 

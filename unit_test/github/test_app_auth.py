@@ -168,3 +168,27 @@ async def test_jwt_provider_expiry_is_within_ten_minutes(rsa_keypair):
     await provider.get_token()
     remaining = provider.expires_at - datetime.now(timezone.utc)
     assert remaining.total_seconds() <= 10 * 60
+
+
+def test_default_jwt_leaves_headroom_below_githubs_cap(rsa_keypair):
+    """GitHub measures exp against its own clock and rejects exp > now+600.
+
+    Asking for the full ten minutes leaves nothing for GitHub's clock
+    sitting behind ours, which is the same skew the backdated iat guards
+    against in the other direction.
+    """
+    from datetime import datetime, timezone
+
+    private_pem, _ = rsa_keypair
+    claims = jwt.decode(
+        GitHubAppAuth("1", private_pem).generate_jwt(),
+        options={"verify_signature": False},
+    )
+    now = int(datetime.now(timezone.utc).timestamp())
+
+    assert claims["exp"] - now <= 600 - 30
+
+
+def test_the_ten_minute_maximum_is_still_accepted(rsa_keypair):
+    private_pem, _ = rsa_keypair
+    assert GitHubAppAuth("1", private_pem).generate_jwt(expiration_minutes=10)
