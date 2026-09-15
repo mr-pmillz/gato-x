@@ -184,16 +184,28 @@ class Enumerator:
             )
 
             if result["success"]:
-                await DataIngestor.construct_workflow_cache(result["data"])
+                try:
+                    await DataIngestor.construct_workflow_cache(result["data"])
+                except Exception as exc:  # noqa: BLE001 -- one batch only
+                    # Losing one batch costs those repos their cached
+                    # workflows, which the REST pass refetches. Letting
+                    # it propagate costs the entire scan.
+                    Output.warn(
+                        f"Failed to cache batch {i}: {exc}. Those repos "
+                        "will be retrieved over REST."
+                    )
+                    logger.warning("Batch %s caching failed", i, exc_info=exc)
             elif result["should_split"] and repo_groups[i] is not None:
                 repos = repo_groups[i]
                 if len(repos) <= 3:
+                    # Nothing is cached for these repos, so the REST pass
+                    # that runs after this one picks them up. Caching None
+                    # here would be a no-op, not a fallback.
                     Output.warn(
-                        f"GraphQL batch of {len(repos)} repos failed "
-                        "with 502 but batch is already at minimum "
-                        "size. Falling back to REST for these repos."
+                        f"GraphQL batch of {len(repos)} repos still failed "
+                        "with 502 at the minimum batch size; they will be "
+                        "retrieved individually over REST instead."
                     )
-                    await DataIngestor.construct_workflow_cache(None)
                     continue
 
                 mid = len(repos) // 2

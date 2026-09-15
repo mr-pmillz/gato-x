@@ -210,6 +210,37 @@ class DataIngestor:
             if "nameWithOwner" not in result:
                 continue
 
+            # GitHub returns partial nodes when a repo becomes
+            # inaccessible mid-query (SAML enforcement, deletion, a
+            # per-node GraphQL error). Indexing a missing field here
+            # raised KeyError out of the whole enumeration, so one odd
+            # repo could end a scan of thousands. Skip the node; the
+            # REST pass picks these repos up afterwards.
+            missing = [
+                field
+                for field in (
+                    "defaultBranchRef",
+                    "forkingAllowed",
+                    "isArchived",
+                    "isFork",
+                    "isPrivate",
+                    "object",
+                    "pushedAt",
+                    "stargazers",
+                    "url",
+                    "viewerPermission",
+                )
+                if field not in result
+            ]
+            if missing:
+                Output.warn(
+                    "Skipping incomplete GraphQL data for "
+                    f"{result['nameWithOwner']} "
+                    f"(missing {', '.join(missing)}); it will be "
+                    "retrieved over REST instead."
+                )
+                continue
+
             owner = result["nameWithOwner"]
             cache.set_empty(owner)
             # Empty means no YAMLs, so just skip.
