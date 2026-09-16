@@ -197,7 +197,16 @@ class RepositoryManager:
             Output.warn("  2. Exit to handle manually")
 
             while True:
-                user_choice = input("Enter your choice (1 or 2): ").strip()
+                try:
+                    user_choice = input("Enter your choice (1 or 2): ").strip()
+                except EOFError:
+                    # Non-interactive run; leave the branch alone rather
+                    # than looping forever or dying in a traceback.
+                    Output.error(
+                        "No input available to resolve the branch conflict; "
+                        "delete or rename the branch and re-run."
+                    )
+                    return False
                 if user_choice == "1":
                     Output.info(f"Deleting existing branch '{source_branch}'...")
                     delete_success = await self.api.commit.delete_branch(

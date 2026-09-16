@@ -16,6 +16,7 @@ limitations under the License.
 
 import asyncio
 import datetime
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -46,7 +47,10 @@ class WebShellUtils:
 
         Args:
             condition_func: Function to poll
-            timeout: Maximum time to wait in seconds
+            timeout: Maximum time to wait in seconds. This is a wall clock
+                deadline: the loop used to run `timeout` iterations, so a
+                sleep_interval above one silently multiplied the wait, and
+                time spent inside condition_func did not count at all.
             sleep_interval: Sleep interval between polls
             success_condition: Function to check if result is successful
 
@@ -60,13 +64,14 @@ class WebShellUtils:
 
             success_condition = default_condition
 
-        for _ in range(timeout):
+        deadline = time.monotonic() + timeout
+        while True:
             result = await condition_func()
             if success_condition(result):
                 return result
+            if time.monotonic() + sleep_interval >= deadline:
+                return None
             await asyncio.sleep(sleep_interval)
-
-        return None
 
     @staticmethod
     async def wait_for_workflow(
@@ -98,8 +103,11 @@ class WebShellUtils:
             )
 
         def is_workflow_found(workflow_id):
+            # -1 means the lookup request itself failed. Keep polling in
+            # case it is transient, but do not reprint the same error on
+            # every iteration -- it was emitted once per second until the
+            # timeout, then once more by the caller.
             if workflow_id == -1:
-                Output.error("Failed to find the created workflow!")
                 return False
             return workflow_id > 0
 

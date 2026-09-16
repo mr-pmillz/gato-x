@@ -1,7 +1,7 @@
 import json
 import os
 import pathlib
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -631,7 +631,7 @@ async def test_construct_workflow_cache_sets_workflow_count(
     from gatox.enumerate.ingest.ingest import DataIngestor
 
     # Set up the mock cache instance
-    mock_cache = AsyncMock()
+    mock_cache = MagicMock()
     mock_cache_mgr_cls.return_value = mock_cache
 
     # Mock graph builder
@@ -691,7 +691,7 @@ async def test_construct_workflow_cache_counts_only_valid_ymls(
     counted in workflow_count."""
     from gatox.enumerate.ingest.ingest import DataIngestor
 
-    mock_cache = AsyncMock()
+    mock_cache = MagicMock()
     mock_cache_mgr_cls.return_value = mock_cache
 
     mock_builder = AsyncMock()
@@ -752,7 +752,7 @@ async def test_construct_workflow_cache_zero_workflows(
     """workflow_count should be 0 when there are no workflow YAML files."""
     from gatox.enumerate.ingest.ingest import DataIngestor
 
-    mock_cache = AsyncMock()
+    mock_cache = MagicMock()
     mock_cache_mgr_cls.return_value = mock_cache
 
     mock_builder = AsyncMock()
@@ -785,7 +785,7 @@ async def test_construct_workflow_cache_handles_none(mock_cache_mgr_cls):
     """construct_workflow_cache should return early when yml_results is None."""
     from gatox.enumerate.ingest.ingest import DataIngestor
 
-    mock_cache = AsyncMock()
+    mock_cache = MagicMock()
     mock_cache_mgr_cls.return_value = mock_cache
 
     # Should not raise

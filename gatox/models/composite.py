@@ -2,6 +2,7 @@ import logging
 
 import yaml
 
+from gatox.models.yaml_loader import WorkflowLoader
 from gatox.workflow_parser.source_map import build_composite_source_map
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ class Composite:
         self.composite = False
         self.parsed_yml = None
         try:
-            loader = yaml.CSafeLoader(action_yml.replace("\t", "  "))
+            loader = WorkflowLoader(action_yml.replace("\t", "  "))
             node = loader.get_single_node()
             if node is not None:
                 self.source_map = build_composite_source_map(node)

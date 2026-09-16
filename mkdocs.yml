@@ -1,7 +1,7 @@
 site_name: Gato-X Documentation
-site_url: https://adnanekhan.github.io/gato-x/
-repo_url: https://github.com/AdnaneKhan/gato-x
-repo_name: AdnaneKhan/gato-x
+site_url: https://mr-pmillz.github.io/gato-x/
+repo_url: https://github.com/mr-pmillz/gato-x
+repo_name: mr-pmillz/gato-x
 edit_uri: edit/main/docs/
 docs_dir: docs
 nav:
@@ -23,6 +23,9 @@ nav:
           - Understanding GitHub Actions Vulnerabilities: user-guide/advanced/vulnerabilities.md
           - Complex Attack Scenarios: user-guide/advanced/complex-attacks.md
           - OIDC Token Exchange: user-guide/advanced/oidc.md
+          - GitHub App Authentication: user-guide/advanced/github-app-auth.md
+          - Configuration File: user-guide/advanced/configuration-file.md
+          - Docker Usage: user-guide/advanced/docker.md
   - Quick Start: quick-start.md
   - Contribution Guide:
       - Overview: contribution-guide/contributions.md
@@ -56,4 +59,4 @@ markdown_extensions:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/AdnaneKhan/gato-x
+      link: https://github.com/mr-pmillz/gato-x

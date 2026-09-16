@@ -16,17 +16,25 @@ class Searcher:
 
     def __init__(
         self,
-        pat: str,
+        pat: str | None = None,
         socks_proxy: str | None = None,
         http_proxy: str | None = None,
         github_url: str | None = None,
+        api_client=None,
     ):
-        self.api = Api(
-            pat,
-            socks_proxy=socks_proxy,
-            http_proxy=http_proxy,
-            github_url=github_url,
-        )
+        if api_client:
+            # Pre-authenticated client, typically a GitHub App installation
+            # whose token renews itself.
+            self.api = api_client
+        else:
+            if not pat:
+                raise ValueError("A valid GitHub token must be provided!")
+            self.api = Api(
+                pat,
+                socks_proxy=socks_proxy,
+                http_proxy=http_proxy,
+                github_url=github_url,
+            )
 
         if self.api.transport:
             self.transport = self.api.transport

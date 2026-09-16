@@ -25,6 +25,7 @@ class AppEnumerator:
         skip_secrets: bool = False,
         skip_admin_runners: bool = False,
         ignore_workflow_run: bool = False,
+        session=None,
     ):
         """Initialize App Enumerator.
 
@@ -38,6 +39,10 @@ class AppEnumerator:
             skip_secrets: Skip secrets enumeration
             skip_admin_runners: Skip admin-level runner enumeration via the API
             ignore_workflow_run: Ignore workflow_run triggers
+            session: Optional :class:`gatox.github.app_session.AppSession`.
+                When supplied, its self-renewing JWT and installation tokens
+                are used, so an enumeration outlives the one-hour
+                installation token expiry.
         """
         self.app_id = app_id
         self.private_key_path = private_key_path
@@ -50,6 +55,7 @@ class AppEnumerator:
         self.ignore_workflow_run = ignore_workflow_run
 
         # Initialize App authentication
+        self.session = session
         self.app_auth = GitHubAppAuth(app_id, private_key_path)
 
         # This will be set when we generate the JWT
@@ -57,7 +63,15 @@ class AppEnumerator:
         self._app_permissions: list[str] | None = None
 
     async def _initialize_api_with_jwt(self):
-        """Initialize API with JWT token."""
+        """Initialize API with a JWT.
+
+        With a session the JWT renews itself; without one a single JWT is
+        minted, which is the legacy behaviour.
+        """
+        if self.session:
+            self.api = await self.session.app_api()
+            return
+
         jwt_token = self.app_auth.generate_jwt()
         self.api = Api(
             jwt_token,
@@ -154,24 +168,27 @@ class AppEnumerator:
 
         Output.info(f"Enumerating installation {installation_id}")
 
-        # Get installation access token
-        access_token_response = await self.api.app.get_installation_access_token(
-            installation_id
-        )
-        if not access_token_response:
-            Output.error(
-                f"Failed to get access token for installation {installation_id}"
+        # Get an installation-scoped client. With a session the token
+        # renews itself; without one it is minted once and expires in an hour.
+        if self.session:
+            installation_api = await self.session.api_for_installation(installation_id)
+        else:
+            access_token_response = await self.api.app.get_installation_access_token(
+                installation_id
             )
-            return None
+            if not access_token_response:
+                Output.error(
+                    f"Failed to get access token for installation {installation_id}"
+                )
+                return None
 
-        # Create new API instance with installation token
-        installation_token = access_token_response["token"]
-        installation_api = Api(
-            installation_token,
-            socks_proxy=self.socks_proxy,
-            http_proxy=self.http_proxy,
-            github_url=self.github_url,
-        )
+            installation_token = access_token_response["token"]
+            installation_api = Api(
+                installation_token,
+                socks_proxy=self.socks_proxy,
+                http_proxy=self.http_proxy,
+                github_url=self.github_url,
+            )
 
         # Get installation repositories
         installation_repos = await installation_api.app.get_installation_repos()
@@ -204,7 +221,9 @@ class AppEnumerator:
         ]
         enumerated_repos = await enumerator.enumerate_repos(repos_to_enumerate)
 
-        await installation_api.close()
+        if not self.session:
+            # The session owns the lifecycle of its own clients.
+            await installation_api.close()
 
         return enumerated_repos
 
@@ -232,6 +251,9 @@ class AppEnumerator:
         return results
 
     async def close(self):
-        """Close API connections."""
+        """Close API connections owned by this enumerator."""
+        if self.session:
+            # Clients belong to the session, which closes them itself.
+            return
         if self.api:
             await self.api.close()

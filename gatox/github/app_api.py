@@ -60,3 +60,33 @@ class AppApi(SubApi):
         if response.status_code == 200:
             return response.json()
         return None
+
+    async def get_org_installation(self, org: str) -> dict | None:
+        """Return the App's installation on ``org``, or ``None`` if absent.
+
+        Requires JWT authentication.
+        """
+        response = await self._base.call_get(f"/orgs/{org}/installation")
+        if response.status_code == 200:
+            return response.json()
+        return None
+
+    async def get_repo_installation(self, owner: str, repo: str) -> dict | None:
+        """Return the App's installation covering ``owner/repo``.
+
+        Requires JWT authentication.
+        """
+        response = await self._base.call_get(f"/repos/{owner}/{repo}/installation")
+        if response.status_code == 200:
+            return response.json()
+        return None
+
+    async def get_user_installation(self, user: str) -> dict | None:
+        """Return the App's installation on a user account.
+
+        Requires JWT authentication.
+        """
+        response = await self._base.call_get(f"/users/{user}/installation")
+        if response.status_code == 200:
+            return response.json()
+        return None

@@ -1,0 +1,40 @@
+# Keep the build context small and free of anything that could leak a
+# credential into an image layer.
+
+.git
+.github
+.venv
+venv
+env
+
+# Local working artifacts
+site/
+cov_html/
+.coverage
+.coverage.*
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Credentials and operator config -- never bake these into an image.
+*.pem
+*.key
+config.yaml
+gh_app_auth.sh
+.env
+.env.*
+
+# Docs and local planning material
+docs/superpowers/
+site/
+
+# Test fixtures and integration harness are not needed at runtime
+unit_test/
+test/
+
+*.zip

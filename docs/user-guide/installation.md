@@ -2,22 +2,66 @@
 
 Gato-X supports OS X and Linux with at least **Python 3.10**.
 
-## PyPI Installation
+> **Note:** This is a fork of [AdnaneKhan/gato-x](https://github.com/AdnaneKhan/gato-x).
+> It is **not** published to PyPI under the `gato-x` name -- `pip install gato-x`
+> installs the upstream project, not this fork. Use the container image or
+> install from source as below.
 
-Gato-X is published on PyPI, so you can simply install it with:
+## Container Image
+
+The quickest way to run this fork, with no Python setup at all:
 
 ```bash
-pip install gato-x
+docker run --rm -e GH_TOKEN ghcr.io/mr-pmillz/gato-x enumerate -t acme-corp
 ```
+
+Multi-architecture images (`linux/amd64`, `linux/arm64`) are published to
+`ghcr.io/mr-pmillz/gato-x`. See [Docker Usage](advanced/docker.md).
 
 ## Installation from Source
 
-### Using pip
+### Using uv (recommended)
 
-We recommend using a virtual environment for `pip`:
+[uv](https://github.com/astral-sh/uv) creates the virtual environment and
+resolves dependencies considerably faster than pip, and it is what CI uses.
 
 ```bash
-git clone https://github.com/AdnaneKhan/gato-x
+git clone https://github.com/mr-pmillz/gato-x
+cd gato-x
+
+uv venv                    # creates .venv/
+uv pip install .           # or: uv pip install -e ".[test,mcp]" for development
+```
+
+Then either activate the environment or call the binary directly:
+
+```bash
+source .venv/bin/activate
+gato-x --help
+
+# ...or without activating:
+uv run gato-x --help
+```
+
+To run the test suite and the lint gates the way CI does:
+
+```bash
+uv pip install -e ".[test,mcp]"
+uv run pytest
+uv run ruff check gatox/
+uv run ruff format --check gatox/
+```
+
+If you do not have uv:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+### Using pip
+
+```bash
+git clone https://github.com/mr-pmillz/gato-x
 cd gato-x
 python3 -m venv venv
 source venv/bin/activate
@@ -35,7 +79,7 @@ pip install -e .
 Alternatively, you can use pipx:
 
 ```bash
-git clone https://github.com/AdnaneKhan/gato-x
+git clone https://github.com/mr-pmillz/gato-x
 cd gato-x
 pipx install .
 ```
