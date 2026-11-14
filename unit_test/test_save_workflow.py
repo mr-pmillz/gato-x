@@ -1,5 +1,6 @@
 import os
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, call, mock_open, patch
 
 import pytest
@@ -32,7 +33,7 @@ class TestSaveWorkflowYmls(unittest.TestCase):
         ]
 
         # Call the function
-        output_directory = "/tmp/test_output"
+        output_directory = str(Path("/tmp/test_output").resolve())
         cli.save_workflow_ymls(output_directory)
 
         # Assert that mkdir was called correctly
