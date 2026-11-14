@@ -8,12 +8,14 @@ share these process statuses:
 | `0` | Completed successfully with results, or completed a non-search operation such as validation or help. |
 | `1` | Operation failed or was incomplete, including API/authentication errors, failed analysis, and output-write errors. |
 | `2` | Invalid arguments or configuration. |
-| `3` | Search/enumeration completed successfully with no matching resources. |
+| `3` | Search/enumeration/report conversion completed with no matching resources. |
 | `130` | Interrupted with Ctrl-C. |
 
 Results mean matching repository names for `search`, repositories or organizations
 for `enumerate`, and installations or repositories for `app`. An enumerated
 repository without vulnerability findings is still a result and returns `0`.
+For `report`, results mean repository records selected for export; findings are
+not required. See [Report Conversion](report.md).
 Successful credential validation returns `0` even without organization membership.
 An inaccessible requested repository is a failure, not an empty successful scan.
 Offline mode intentionally skips API-dependent checks; those skips alone do not

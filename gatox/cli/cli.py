@@ -39,6 +39,7 @@ from gatox.enumerate.finegrained_enumeration import FineGrainedEnumerator
 from gatox.github.app_session import AppSession
 from gatox.github.credentials import AppAuthError
 from gatox.models.execution import Execution
+from gatox.reporting import export_report, load_report, repositories
 from gatox.search.search import Searcher
 from gatox.util.arg_utils import read_file_and_validate_lines
 
@@ -48,10 +49,11 @@ async def cli(args: list[str]) -> int:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawTextHelpFormatter,
         description=(
-            f"{Fore.YELLOW}This tool requires a GitHub access token to"
-            f" function!{Style.RESET_ALL}\n\nThis can be passed via the"
+            f"{Fore.YELLOW}Remote operations require GitHub credentials."
+            f"{Style.RESET_ALL}\n\nA token can be passed via the"
             ' "GH_TOKEN" environment variable, or if it is not set,\nthen the'
-            " application will prompt you for one. App enumeration requires a GitHub App ID and PEM file.\n\n"
+            " application will prompt you for one. App enumeration requires a GitHub App ID and PEM file.\n"
+            "Local enumeration and report conversion work offline without credentials.\n\n"
         ),
         epilog=(
             "Exit statuses: 0 success; 1 operation failed or incomplete; "
@@ -104,6 +106,22 @@ async def cli(args: list[str]) -> int:
     )
     persistence_parser.set_defaults(func=persistence)
 
+    report_parser = subparsers.add_parser(
+        "report",
+        help="Convert saved enumeration JSON/JSONL to SARIF or JSONL (offline)",
+    )
+    report_parser.set_defaults(func=report)
+    report_parser.add_argument(
+        "--input", required=True, help="Native JSON or repository JSONL file"
+    )
+    report_parser.add_argument(
+        "--output", required=True, help="Destination report file"
+    )
+    report_parser.add_argument("--format", required=True, choices=["sarif", "jsonl"])
+    report_parser.add_argument(
+        "--repository", help="Include only this repository (owner/repo)"
+    )
+
     configure_parser_attack(attack_parser)
     configure_parser_enumerate(enumerate_parser)
     configure_parser_search(search_parser)
@@ -118,6 +136,7 @@ async def cli(args: list[str]) -> int:
         search_parser,
         app_parser,
         persistence_parser,
+        report_parser,
     ):
         configure_parser_general(subparser, subcommand=True)
 
@@ -130,6 +149,7 @@ async def cli(args: list[str]) -> int:
             "search": search_parser,
             "app": app_parser,
             "persistence": persistence_parser,
+            "report": report_parser,
         },
     )
 
@@ -379,6 +399,9 @@ async def build_app_api(args, target=None):
 def validate_arguments(args, parser: argparse.ArgumentParser):
     logging.basicConfig(level=args.log_level)
 
+    if getattr(args, "command", None) == "report":
+        return
+
     app_credentials = app_credentials_from_args(args)
 
     if app_credentials is not None:
@@ -467,6 +490,21 @@ def validate_arguments(args, parser: argparse.ArgumentParser):
             f"{Fore.RED}[-]{Style.RESET_ALL} You cannot use a SOCKS and HTTP"
             " proxy at the same time!"
         )
+
+
+async def report(args: argparse.Namespace, parser: object) -> int:
+    """Convert saved reports without credentials or GitHub API calls."""
+    source, destination = Path(args.input).expanduser(), Path(args.output).expanduser()
+    if source.resolve() == destination.resolve() or (
+        destination.exists() and source.samefile(destination)
+    ):
+        raise ValueError("Report input and output must be different files")
+    data = load_report(source.read_text(encoding="utf-8"))
+    result = export_report(data, args.format, args.repository)
+    destination.write_text(result, encoding="utf-8")
+    return (
+        ExitCode.SUCCESS if repositories(data, args.repository) else ExitCode.NO_RESULTS
+    )
 
 
 async def attack(args, parser):

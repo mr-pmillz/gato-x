@@ -12,11 +12,9 @@ def release_metadata(
     """Reject mismatched tags and prevent republishing a version from new code."""
     if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version):
         raise ValueError("Release version must be stable MAJOR.MINOR.PATCH")
-    if ref != "refs/heads/main" and ref != f"refs/tags/v{version}":
-        raise ValueError("Release ref must be main or match the project version tag")
+    if ref != f"refs/tags/v{version}":
+        raise ValueError("Release ref must match the project version tag")
     if existing_sha and existing_sha != sha:
-        if event == "push" and ref == "refs/heads/main":
-            return {"version": version, "publish": "false"}
         raise ValueError("This version is already tagged at a different commit")
     return {"version": version, "publish": "true"}
 

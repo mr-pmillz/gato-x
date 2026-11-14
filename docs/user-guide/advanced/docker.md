@@ -13,7 +13,9 @@ Apple Silicon and on ARM servers.
 
 | Tag | Points at |
 |---|---|
-| `latest` | The current `main` branch |
+| `latest` | The most recently published stable release |
+| `main` | The current production branch |
+| `develop` | The integration branch |
 | `1.4.0`, `v1.4.0` | A specific stable release |
 | `1.4` | The latest patch of that minor release |
 | `sha-<full-commit-sha>` | One exact commit |
@@ -117,9 +119,9 @@ docker buildx build --platform linux/amd64,linux/arm64 -t gato-x:local .
 
 ## Publishing
 
-Pushes to `main` publish `main`, `latest`, and a full-SHA tag after tests and a
-container smoke test pass. Release builds publish version tags through the same
-workflow. PRs only build and test; they have no registry publishing permissions.
+Pushes to `main` and `develop` publish their branch tag and a full-SHA tag after
+tests and a container smoke test pass. Stable releases publish version tags and
+`latest` through the same workflow. PRs only build and test; they have no registry publishing permissions.
 See [Releases](../../contribution-guide/releases.md) for release and manual-build steps.
 
 Docker preserves Gato-X

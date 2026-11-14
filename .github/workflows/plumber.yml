@@ -1,0 +1,54 @@
+name: Plumber
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  scan:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: getplumber/plumber@ec8cb3a7edd6a324b33e85109b627b2df6023d94 # v0.7.23
+        with:
+          version: v0.7.23
+          score-push: false
+          upload-sarif: false
+          # Branch protection is intentionally being configured separately.
+          # Preserve findings and scores; operational failures still fail CI.
+          soft-fail: true
+          output: .verification/plumber/report.json
+          sarif: .verification/plumber/results.sarif
+          pbom: .verification/plumber/pbom.json
+          pbom-cyclonedx: .verification/plumber/sbom.json
+  score:
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.repository == 'mr-pmillz/gato-x' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: getplumber/plumber@ec8cb3a7edd6a324b33e85109b627b2df6023d94 # v0.7.23
+        with:
+          version: v0.7.23
+          score-push: true
+          soft-fail: true
+          output: .verification/plumber/report.json
+          sarif: .verification/plumber/results.sarif
+          pbom: .verification/plumber/pbom.json
+          pbom-cyclonedx: .verification/plumber/sbom.json

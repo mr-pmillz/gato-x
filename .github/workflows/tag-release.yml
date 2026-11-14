@@ -1,0 +1,38 @@
+name: Tag Release
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: gato-x-tag-release
+  cancel-in-progress: false
+jobs:
+  tag:
+    if: >-
+      github.repository == 'mr-pmillz/gato-x' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (startsWith(github.event.pull_request.head.ref, 'release/v') ||
+       startsWith(github.event.pull_request.head.ref, 'hotfix/v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      # The helper comes from trusted main, and reads release metadata at the
+      # PR's merge SHA. It never tags whatever main happens to point at later.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Tag the reviewed merge and dispatch publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/gitflow.py tag

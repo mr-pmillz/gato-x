@@ -112,6 +112,7 @@ SUBCOMMAND_ALIASES = {
     "persistence": "persistence",
     "persist": "persistence",
     "p": "persistence",
+    "report": "report",
 }
 
 #: Values that name a file or directory and should honour ``~``.

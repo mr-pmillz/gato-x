@@ -138,16 +138,19 @@ class LocalApiStub(Api):
         rel = Path(path)
         if rel.is_absolute() or any(part == ".." for part in rel.parts):
             return None
-        candidate = root / rel
         try:
+            root = root.resolve()
+            candidate = (root / rel).resolve()
+            if not candidate.is_relative_to(root):
+                return None
             if candidate.is_file():
                 return candidate.read_text(encoding="utf-8", errors="replace")
             if candidate.is_dir():
                 for action_name in ("action.yml", "action.yaml"):
-                    inner = candidate / action_name
-                    if inner.is_file():
+                    inner = (candidate / action_name).resolve()
+                    if inner.is_relative_to(root) and inner.is_file():
                         return inner.read_text(encoding="utf-8", errors="replace")
-        except OSError as e:  # pragma: no cover - defensive
+        except (OSError, RuntimeError) as e:  # pragma: no cover - defensive
             logger.debug("[local] read error for %s/%s: %s", slug, path, e)
         return None
 
@@ -487,10 +490,19 @@ class LocalEnumerator:
         if not wf_dir.is_dir():
             return loaded
 
+        if not wf_dir.resolve().is_relative_to(repo_dir.resolve()):
+            self.failed = True
+            logger.warning("[local] workflow directory escapes repository: %s", wf_dir)
+            return loaded
+
         for yml in sorted(wf_dir.iterdir()):
             if not yml.is_file() or not _is_workflow_file(yml.name):
                 continue
             try:
+                if not yml.resolve().is_relative_to(repo_dir.resolve()):
+                    self.failed = True
+                    logger.warning("[local] workflow file escapes repository: %s", yml)
+                    continue
                 contents = yml.read_text(encoding="utf-8", errors="replace")
             except OSError as e:
                 self.failed = True

@@ -12,6 +12,7 @@ nav:
           - Exit Statuses: user-guide/command-reference/exit-statuses.md
           - Search Command: user-guide/command-reference/search.md
           - Enumerate Command: user-guide/command-reference/enumerate.md
+          - Report Conversion: user-guide/command-reference/report.md
           - Attack Command: user-guide/command-reference/attack.md
       - MCP Server: user-guide/mcp-server/mcp.md
       - Use Cases:

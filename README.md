@@ -1,3 +1,5 @@
+[![Plumber Score](https://score.getplumber.io/github.com/mr-pmillz/gato-x.svg)](https://score.getplumber.io/github.com/mr-pmillz/gato-x)
+[![Branch Policy](https://github.com/mr-pmillz/gato-x/actions/workflows/branch-policy.yml/badge.svg)](https://github.com/mr-pmillz/gato-x/actions/workflows/branch-policy.yml)
 ![Supported Python versions](https://img.shields.io/badge/python-3.10+-blue.svg)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
@@ -44,6 +46,7 @@ Gato-X contains a powerful scanning engine for GitHub Actions vulnerabilities. I
 * Gate Check Detection (permission checks, etc.)
 * Lightweight Source-Sink Analysis for Variables
 * MCP Server
+* Offline SARIF and JSONL exports for code scanning and automation
 
 ## Quick Start
 
@@ -63,6 +66,20 @@ empty results (`3`), and interruption (`130`). See
 Release packages are published at [mr-pmillz/gato-x releases](https://github.com/mr-pmillz/gato-x/releases).
 See [Maintaining this Fork](docs/contribution-guide/releases.md) for the publishing workflow
 and the [upstream comparison](docs/contribution-guide/upstream-comparison.md).
+
+Feature PRs target `develop`; release branches start from `develop`, hotfixes
+start from `main`, and merging either into `main` publishes the reviewed version.
+See the [Git Flow release guide](docs/contribution-guide/releases.md).
+
+Convert existing enumeration output without credentials:
+
+```bash
+gato-x report --input scan.json --format sarif --repository acme/example --output results.sarif
+gato-x report --input scan.json --format jsonl --output repositories.jsonl
+```
+
+See [Report Conversion](docs/user-guide/command-reference/report.md) for output
+semantics and code-scanning repository selection.
 
 Any command line option can also live in `~/.config/gato-x/config.yaml` --
 see [Configuration File](docs/user-guide/advanced/configuration-file.md).

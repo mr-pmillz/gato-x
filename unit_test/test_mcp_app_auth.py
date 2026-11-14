@@ -12,6 +12,16 @@ from gatox.mcp import mcp_server  # noqa: E402
 from gatox.mcp.mcp_server import MCPAuthParams, enumerator_for  # noqa: E402
 
 
+def test_proxy_validation_uses_complete_model():
+    """SOCKS alone works and mutually exclusive proxies fail in either input order."""
+    assert MCPAuthParams(socks_proxy="localhost:9050").socks_proxy == "localhost:9050"
+    assert MCPAuthParams(http_proxy="http://localhost:8080").http_proxy
+    pairs = [("socks_proxy", "localhost:9050"), ("http_proxy", "http://localhost:8080")]
+    for items in (pairs, list(reversed(pairs))):
+        with pytest.raises(ValueError, match="Cannot use both"):
+            MCPAuthParams(**dict(items))
+
+
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch):
     for name in ("GH_TOKEN", "GH_APP_ID", "GH_APP_KEY", "GH_APP_INSTALLATION_ID"):

@@ -44,7 +44,8 @@ test = [
     "pyright",
     "pre-commit",
     "black",
-    "isort"
+    "isort",
+    "tomli; python_version < '3.11'"
 ]
 docs = [
     "mkdocs",

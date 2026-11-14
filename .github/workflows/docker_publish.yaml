@@ -2,9 +2,9 @@ name: Build and Publish Container Image
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop, 'release/**', 'hotfix/**']
   pull_request:
-    branches: [main]
+    branches: [main, develop, 'release/**', 'hotfix/**']
   workflow_dispatch:
   workflow_call:
     inputs:
@@ -45,7 +45,7 @@ jobs:
           load: true
           tags: gato-x:verify
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max' || '' }}
       - name: Verify installed CLI, package data, MCP, and exit statuses
         run: |
           docker run --rm gato-x:verify --help
@@ -60,7 +60,7 @@ jobs:
     if: >-
       github.event_name != 'pull_request' &&
       github.repository == 'mr-pmillz/gato-x' &&
-      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -95,7 +95,8 @@ jobs:
           tags: |
             type=sha,prefix=sha-,format=long
             type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=develop,enable=${{ github.ref == 'refs/heads/develop' }}
+            type=raw,value=latest,enable=${{ inputs.release-version != '' }}
             type=semver,pattern={{version}},value=${{ inputs.release-version }},enable=${{ inputs.release-version != '' }}
             type=semver,pattern=v{{version}},value=${{ inputs.release-version }},enable=${{ inputs.release-version != '' }}
             type=semver,pattern={{major}}.{{minor}},value=${{ inputs.release-version }},enable=${{ inputs.release-version != '' }}
@@ -111,7 +112,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
           provenance: true
           sbom: true
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2

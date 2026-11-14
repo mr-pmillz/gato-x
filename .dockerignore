@@ -3,6 +3,7 @@
 
 .git
 .github
+.verification
 .venv
 venv
 env

@@ -6,13 +6,15 @@ Exposes all enumerate functionality as LLM-friendly tools.
 import asyncio
 import os
 from contextlib import asynccontextmanager
+from typing import Literal
 
 from fastmcp import Context, FastMCP
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, model_validator
 
 from gatox.cli.output import Output
 from gatox.enumerate.enumerate import Enumerator
 from gatox.github.app_session import AppSession
+from gatox.reporting import export_report
 
 app = FastMCP(
     name="Gato-X MCP Server",
@@ -49,12 +51,12 @@ class MCPAuthParams(BaseModel):
         description="If true, ignores the workflow_run trigger when enumerating repositories. Useful if the org requires approval for all fork PRs.",
     )
 
-    @field_validator("socks_proxy")
-    @classmethod
-    def validate_proxies(cls, v, values):
-        if v and values.get("http_proxy"):
+    @model_validator(mode="after")
+    def validate_proxies(self):
+        """Validate both fields after parsing, independent of their input order."""
+        if self.socks_proxy and self.http_proxy:
             raise ValueError("Cannot use both SOCKS and HTTP proxy at the same time.")
-        return v
+        return self
 
     app_id: str | None = Field(
         None,
@@ -408,6 +410,19 @@ async def validate_pat(ctx: Context, params: ValidatePATInput):
     except Exception as e:
         await ctx.error(f"Failed to validate PAT: {e}")
         return {"error": str(e), "details": getattr(e, "args", [])}
+
+
+@app.tool()
+async def export_enumeration_report(
+    data: dict | list, format: Literal["sarif", "jsonl"], repository: str | None = None
+) -> str:
+    """Convert native enumeration results to SARIF or JSONL without network or file access.
+
+    Accepts CLI JSON or results from the enumeration MCP tools. Use repository
+    to select one owner/repo before uploading SARIF to that repository's code
+    scanning. JSONL retains complete repository records, including metadata.
+    """
+    return export_report(data, format, repository)
 
 
 async def main():
