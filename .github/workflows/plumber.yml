@@ -16,11 +16,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Create report directory
+        run: mkdir -p .verification/plumber
       - uses: getplumber/plumber@ec8cb3a7edd6a324b33e85109b627b2df6023d94 # v0.7.23
         with:
           version: v0.7.23
           score-push: false
           upload-sarif: false
+          upload-artifacts: false
           # Branch protection is intentionally being configured separately.
           # Preserve findings and scores; operational failures still fail CI.
           soft-fail: true
@@ -28,6 +31,15 @@ jobs:
           sarif: .verification/plumber/results.sarif
           pbom: .verification/plumber/pbom.json
           pbom-cyclonedx: .verification/plumber/sbom.json
+      - name: Retain Plumber evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: plumber-report
+          path: .verification/plumber/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
   score:
     if: >-
       github.event_name != 'pull_request' &&
@@ -43,12 +55,24 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Create report directory
+        run: mkdir -p .verification/plumber
       - uses: getplumber/plumber@ec8cb3a7edd6a324b33e85109b627b2df6023d94 # v0.7.23
         with:
           version: v0.7.23
           score-push: true
+          upload-artifacts: false
           soft-fail: true
           output: .verification/plumber/report.json
           sarif: .verification/plumber/results.sarif
           pbom: .verification/plumber/pbom.json
           pbom-cyclonedx: .verification/plumber/sbom.json
+      - name: Retain Plumber evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: plumber-report
+          path: .verification/plumber/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
