@@ -35,9 +35,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     && uv pip install --python "${VIRTUAL_ENV}/bin/python" ".[mcp]"
 
 # Now install Gato-X itself on top of the cached dependency layer.
-COPY . .
+COPY gatox/ ./gatox/
+COPY LICENSE ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --python "${VIRTUAL_ENV}/bin/python" --no-deps .
+    uv pip install --python "${VIRTUAL_ENV}/bin/python" \
+        --no-deps --reinstall-package gato-x .
 
 # ---------------------------------------------------------------------------
 # Runtime
@@ -56,7 +58,7 @@ RUN apt-get update \
 # so it does not run as root.
 RUN useradd --create-home --uid 1000 --shell /bin/bash gatox
 
-COPY --from=builder --chown=gatox:gatox /opt/venv /opt/venv
+COPY --from=builder /opt/venv /opt/venv
 
 ENV PATH="/opt/venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \

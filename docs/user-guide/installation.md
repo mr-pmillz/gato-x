@@ -49,7 +49,8 @@ To run the test suite and the lint gates the way CI does:
 uv pip install -e ".[test,mcp]"
 uv run pytest
 uv run ruff check gatox/
-uv run ruff format --check gatox/
+uv run black --check .
+uv run isort --check-only gatox/
 ```
 
 If you do not have uv:
@@ -83,6 +84,15 @@ git clone https://github.com/mr-pmillz/gato-x
 cd gato-x
 pipx install .
 ```
+
+## Release Packages
+
+Download wheels and source archives from
+[mr-pmillz/gato-x Releases](https://github.com/mr-pmillz/gato-x/releases).
+Install a downloaded wheel with `pip install ./gato_x-<version>-py3-none-any.whl`.
+The Python import package remains `gatox`; GitHub namespaces are not Python
+module names. Every source-install URL, image, release and documentation link
+for this fork uses `mr-pmillz/gato-x`. Upstream attribution is retained.
 
 ## GitHub Token Setup
 

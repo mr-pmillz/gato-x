@@ -15,6 +15,7 @@ limitations under the License.
 """
 
 import logging
+import os
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -116,20 +117,24 @@ class PersistenceAttack(Attacker):
             encryption_algorithm=serialization.NoEncryption(),
         ).decode("utf-8")
 
+        try:
+            # Save exclusively with owner-only permissions before creating remote
+            # access. Existing files and symlinks must never be overwritten.
+            with open(
+                key_path, "x", opener=lambda path, flags: os.open(path, flags, 0o600)
+            ) as key_file:
+                key_file.write(private_key_pem)
+        except OSError as exc:
+            Output.error(f"Failed to save private key to {key_path}: {exc}")
+            return False
+
         result = await self.api.repo.create_deploy_key(
             target_repo, key_title, ssh_public_key, read_only=False
         )
         if result:
-            try:
-                # Save private key to specified file
-                with open(key_path, "w") as f:
-                    f.write(private_key_pem)
-                Output.result(f"Successfully created deploy key for {target_repo}")
-                Output.info(f"Private key saved to: {key_path}")
-                return True
-            except Exception as e:
-                Output.error(f"Failed to save private key to {key_path}: {str(e)}")
-                return False
-        else:
-            Output.error(f"Failed to create deploy key for {target_repo}")
-            return False
+            Output.result(f"Successfully created deploy key for {target_repo}")
+            Output.info(f"Private key saved to: {key_path}")
+            return True
+        Output.error(f"Failed to create deploy key for {target_repo}")
+        Output.info(f"The unused private key remains at: {key_path}")
+        return False

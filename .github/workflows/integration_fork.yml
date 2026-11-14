@@ -1,68 +1,39 @@
-name: Fork PR Integration Testing
+name: Fork PR Unit Testing
 on:
   workflow_dispatch:
     inputs:
       pr_repo:
-        description: Forked repository of PR head.
+        description: Fork repository (owner/repo)
         required: true
+        type: string
       pr_sha:
-        description: Head SHA to test
+        description: Immutable 40-character commit SHA
         required: true
-env:
-  LOW_PRIV_PAT: ${{ secrets.LOW_PRIV_PAT }}
-  ORG_MEMBER_REPO_TOKEN: ${{ secrets.ORG_MEMBER_REPO_TOKEN }}
-  ORG_MEMBER_REPO_WORKFLOW_TOKEN: ${{ secrets.ORG_MEMBER_REPO_WORKFLOW_TOKEN }}
-  ORG_MEMBER_REPO_WORKFLOW_ADMIN_TOKEN: ${{ secrets.ORG_MEMBER_REPO_WORKFLOW_ADMIN_TOKEN }}
-  ORG_ADMIN_REPO_TOKEN: ${{ secrets.ORG_ADMIN_REPO_TOKEN }}
-  ORG_ADMIN_REPO_WORKFLOW_TOKEN: ${{ secrets.ORG_ADMIN_REPO_WORKFLOW_TOKEN }}
-  ORG_ADMIN_REPO_WORKFLOW_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_REPO_WORKFLOW_ADMIN_TOKEN }}
-  ORG_ADMIN_REPO_WORKFLOW_ADMIN_DELETE_TOKEN: ${{ secrets.ORG_ADMIN_REPO_WORKFLOW_ADMIN_DELETE_TOKEN }}
-  WF_DISPATCH_TOKEN: ${{ secrets.WF_DISPATCH_TOKEN }}
-  RUN_REF: ${{ github.ref }}
+        type: string
+
+permissions:
+  contents: read
 
 jobs:
-    SH-Runner-Dispatch:
-        if: contains(FromJSON('["mr-pmillz"]'), github.actor)
-        name: Prepare Integration Test SH Runner
-        runs-on: ubuntu-latest
-        steps:
-          - name: Checkout the repo
-            uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-          - name: Setup python
-            uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-            with:
-              python-version: 3.11
-          - run: pip install requests
-          - name: Dispatch Runner Event
-            run: python test/runner_helper.py dispatch
-    Integration-Testing:
-        name: Gato Integration Testing
-        needs: SH-Runner-Dispatch
-        if: success()
-        strategy:
-          max-parallel: 1
-          matrix:
-            os: [macos-latest, ubuntu-latest]
-            python-version: ["3.10"]
-        runs-on: ${{ matrix.os }}
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Validate checkout identity
         env:
-          PR_NUMBER: ${{ inputs.pr_number }}
-          GH_TOKEN: ${{ github.token }}
-        timeout-minutes: 10
-
-        steps:
-          - name: Checkout the repo
-            uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-            with:
-              repository: ${{ inputs.pr_repo }}
-              ref: ${{ inputs.pr_sha }}
-          - name: Setup python
-            uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-            with:
-              python-version: ${{ matrix.python-version }}
-          - run: |
-              python -m pip install --upgrade pip
-              pip install ".[test]"
-          - name: Kick off integration tests.
-            run: |
-              pytest test/
+          PR_REPO: ${{ inputs.pr_repo }}
+          PR_SHA: ${{ inputs.pr_sha }}
+        run: |
+          [[ "$PR_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]
+          [[ "$PR_SHA" =~ ^[a-fA-F0-9]{40}$ ]]
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ inputs.pr_repo }}
+          ref: ${{ inputs.pr_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - run: python -m pip install '.[test,mcp]'
+      # Fork code receives no integration credentials and never dispatches a runner.
+      - run: python -m pytest unit_test/ --cov-fail-under=70

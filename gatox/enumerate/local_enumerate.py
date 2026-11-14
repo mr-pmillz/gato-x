@@ -464,6 +464,7 @@ class LocalEnumerator:
         self.user_perms: dict | None = None
         self._loaded_repos: list[Repository] = []
         self._loaded_workflow_count = 0
+        self.failed = False
 
     # ---- discovery + loading ------------------------------------------------
 
@@ -492,6 +493,7 @@ class LocalEnumerator:
             try:
                 contents = yml.read_text(encoding="utf-8", errors="replace")
             except OSError as e:
+                self.failed = True
                 logger.warning("[local] could not read %s: %s", yml, e)
                 continue
 
@@ -502,6 +504,7 @@ class LocalEnumerator:
                 default_branch=repo.repo_data["default_branch"],
             )
             if wf.isInvalid():
+                self.failed = True
                 logger.debug(
                     "[local] skipping invalid workflow YAML %s in %s",
                     yml.name,
@@ -571,6 +574,7 @@ class LocalEnumerator:
                 else:
                     return await visitor_func(WorkflowGraphBuilder().graph, self.api)
             except Exception as e:  # pragma: no cover - defensive
+                self.failed = True
                 logger.error(f"Error in {visitor_class.__name__}: {e}")
                 return None
 
@@ -583,6 +587,7 @@ class LocalEnumerator:
             if result and not isinstance(result, BaseException):
                 await VisitorUtils.add_repo_results(result, self.api)
             elif isinstance(result, BaseException):  # pragma: no cover
+                self.failed = True
                 logger.error(f"Error in {visitor_class[0].__name__}: {result}")
 
         # Runner detection from log files is API-only; we still run the graph

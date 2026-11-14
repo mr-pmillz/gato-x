@@ -9,6 +9,7 @@ nav:
       - Installation: user-guide/installation.md
       - Command Reference:
           - Overview: user-guide/command-reference/index.md
+          - Exit Statuses: user-guide/command-reference/exit-statuses.md
           - Search Command: user-guide/command-reference/search.md
           - Enumerate Command: user-guide/command-reference/enumerate.md
           - Attack Command: user-guide/command-reference/attack.md
@@ -32,6 +33,8 @@ nav:
       - Project Architecture: contribution-guide/architecture.md
       - Design Guidelines: contribution-guide/design.md
       - Testing Guidelines: contribution-guide/testing.md
+      - Releases: contribution-guide/releases.md
+      - Upstream Comparison: contribution-guide/upstream-comparison.md
       - New Features: contribution-guide/new-features.md  
 
 theme:

@@ -116,3 +116,5 @@ gato-x persistence --help
 ```
 
 For detailed information about each command, refer to the specific command pages linked above.
+
+See [Exit Statuses](exit-statuses.md) when calling Gato-X from scripts or CI.

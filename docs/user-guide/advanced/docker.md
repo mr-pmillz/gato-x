@@ -14,9 +14,9 @@ Apple Silicon and on ARM servers.
 | Tag | Points at |
 |---|---|
 | `latest` | The current `main` branch |
-| `v1.4.0` | A specific release |
+| `1.4.0`, `v1.4.0` | A specific stable release |
 | `1.4` | The latest patch of that minor release |
-| `sha-a1b2c3d` | One exact commit |
+| `sha-<full-commit-sha>` | One exact commit |
 
 Pin to a release tag or a digest for anything reproducible.
 
@@ -27,7 +27,8 @@ docker run --rm -e GH_TOKEN ghcr.io/mr-pmillz/gato-x enumerate -t acme-corp
 ```
 
 `-e GH_TOKEN` with no value passes the variable through from your shell, which
-keeps the token out of your shell history and out of `docker inspect`.
+keeps the token value out of your shell history. Container environment values
+are still visible to anyone with access to the Docker daemon or `docker inspect`.
 
 Writing results back to the host needs the output directory mounted, and the
 container runs as UID 1000 so it must be able to write there:
@@ -113,3 +114,14 @@ docker buildx build --platform linux/amd64,linux/arm64 -t gato-x:local .
   non-root user. Do not add `--privileged` or run it as root.
 - The MCP server is included; run it with
   `--entrypoint gato-x-mcp`.
+
+## Publishing
+
+Pushes to `main` publish `main`, `latest`, and a full-SHA tag after tests and a
+container smoke test pass. Release builds publish version tags through the same
+workflow. PRs only build and test; they have no registry publishing permissions.
+See [Releases](../../contribution-guide/releases.md) for release and manual-build steps.
+
+Docker preserves Gato-X
+[exit statuses](../command-reference/exit-statuses.md), including `3` for an empty
+completed search or enumeration.

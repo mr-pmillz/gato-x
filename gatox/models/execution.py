@@ -13,6 +13,7 @@ class Execution:
         self.user_details = None
         self.organizations: list[Organization] = []
         self.repositories: list[Repository] = []
+        self.installations: list[dict] | None = None
         self.timestamp = datetime.datetime.now()
 
     def add_organizations(self, organizations: list[Organization]):
@@ -41,6 +42,10 @@ class Execution:
         """
         self.user_details = user_details
 
+    def add_installations(self, installations: list[dict]) -> None:
+        """Include App installation records in the enumeration JSON output."""
+        self.installations = installations
+
     def toJSON(self):
         """Converts the run to Gato JSON representation"""
 
@@ -63,4 +68,6 @@ class Execution:
                 },
             }
 
+            if self.installations is not None:
+                representation["enumeration"]["installations"] = self.installations
             return representation

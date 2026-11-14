@@ -127,8 +127,10 @@ class AppEnumerator:
         assert self.api is not None
 
         installations = await self.api.app.get_app_installations()
+        if installations is None:
+            Output.error("Failed to retrieve installations")
+            return []
         if not installations:
-            Output.error("No installations found or failed to retrieve installations")
             return []
 
         Output.info(f"Found {len(installations)} installation(s)")
@@ -190,42 +192,49 @@ class AppEnumerator:
                 github_url=self.github_url,
             )
 
-        # Get installation repositories
-        installation_repos = await installation_api.app.get_installation_repos()
-        if not installation_repos:
-            Output.error(f"No repositories found for installation {installation_id}")
-            return None
+        try:
+            # Get installation repositories
+            installation_repos = await installation_api.app.get_installation_repos()
+            if not installation_repos:
+                Output.error(
+                    f"No repositories found for installation {installation_id}"
+                )
+                return None
 
-        Output.info(
-            f"Found {installation_repos['total_count']} repositories in installation"
-        )
+            Output.info(
+                f"Found {installation_repos['total_count']} repositories in installation"
+            )
 
-        # Create standard enumerator with installation token
-        enumerator = Enumerator(
-            socks_proxy=self.socks_proxy,
-            http_proxy=self.http_proxy,
-            skip_log=self.skip_log,
-            skip_secrets=self.skip_secrets,
-            skip_admin_runners=self.skip_admin_runners,
-            github_url=self.github_url,
-            ignore_workflow_run=self.ignore_workflow_run,
-            finegrained_permisions=(
-                set(self._app_permissions) if self._app_permissions else None
-            ),
-            api_client=installation_api,
-        )
+            if not installation_repos["repositories"]:
+                return []
 
-        # Enumerate repositories
-        repos_to_enumerate = [
-            repo["full_name"] for repo in installation_repos["repositories"]
-        ]
-        enumerated_repos = await enumerator.enumerate_repos(repos_to_enumerate)
+            # Create standard enumerator with installation token
+            enumerator = Enumerator(
+                socks_proxy=self.socks_proxy,
+                http_proxy=self.http_proxy,
+                skip_log=self.skip_log,
+                skip_secrets=self.skip_secrets,
+                skip_admin_runners=self.skip_admin_runners,
+                github_url=self.github_url,
+                ignore_workflow_run=self.ignore_workflow_run,
+                finegrained_permisions=(
+                    set(self._app_permissions) if self._app_permissions else None
+                ),
+                api_client=installation_api,
+            )
 
-        if not self.session:
-            # The session owns the lifecycle of its own clients.
-            await installation_api.close()
+            # Enumerate repositories
+            repos_to_enumerate = [
+                repo["full_name"] for repo in installation_repos["repositories"]
+            ]
+            enumerated_repos = await enumerator.enumerate_repos(repos_to_enumerate)
 
-        return enumerated_repos
+            if enumerator.failed:
+                Output.error("Installation enumeration was incomplete")
+            return enumerated_repos
+        finally:
+            if not self.session:
+                await installation_api.close()
 
     async def enumerate_all_installations(self) -> list[Execution]:
         """Enumerate all installations accessible to the GitHub App."""

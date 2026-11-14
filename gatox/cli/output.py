@@ -13,6 +13,7 @@ from gatox.cli.colors import (
     YELLOW_DASH,
     YELLOW_EXCLAIM,
 )
+from gatox.cli.exit_codes import record_error
 
 
 class Singleton(type):
@@ -79,6 +80,7 @@ class Output(metaclass=Singleton):
         Args:
             message (str): Message to format.
         """
+        record_error()
         if Output().suppress:
             return
         print(f"{Output().red_dash} {message}")

@@ -1,5 +1,10 @@
 # GitHub App Authentication
 
+App installation and repository listings follow all API pages. CLI
+`app --installations --output-json FILE` includes installation records under
+`enumeration.installations`; a valid App with no installations returns exit
+status `3`. See [Exit Statuses](../command-reference/exit-statuses.md).
+
 Gato-X can authenticate as a GitHub App instead of using a personal access
 token. Pass the App ID and its private key and Gato-X does the rest: it signs
 the JWT, exchanges it for an installation access token, and renews both for as

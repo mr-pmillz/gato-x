@@ -8,9 +8,12 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   bump-version:
-    if: ${{ github.actor == 'mr-pmillz' }}
+    if: github.repository == 'mr-pmillz/gato-x' && github.ref == 'refs/heads/main' && github.actor == 'mr-pmillz'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -26,6 +29,10 @@ jobs:
 
       - name: Update pyproject.toml with new version
         run: |
+          if [[ ! "$NEW_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo 'Expected a stable MAJOR.MINOR.PATCH version' >&2
+            exit 1
+          fi
           echo "Updating pyproject.toml with version $NEW_VERSION"
           sed -i "s/^version\s*=.*/version = \"$NEW_VERSION\"/" pyproject.toml
 

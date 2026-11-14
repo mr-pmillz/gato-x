@@ -42,7 +42,9 @@ test = [
     "pytest-asyncio",
     "ruff",
     "pyright",
-    "pre-commit"
+    "pre-commit",
+    "black",
+    "isort"
 ]
 docs = [
     "mkdocs",
@@ -60,7 +62,7 @@ packages = [
 [tool.pytest.ini_options]
 testpaths = ["unit_test"]
 python_files = ["test_*.py"]
-addopts = "--cov=gatox"
+addopts = "--cov=gatox --cov-fail-under=70"
 asyncio_mode = "auto"
 
 [tool.coverage.run]
@@ -68,6 +70,14 @@ source = ["gatox"]
 
 [tool.coverage.html]
 directory = "cov_html"
+
+[tool.black]
+line-length = 88
+
+[tool.isort]
+profile = "black"
+line_length = 88
+known_first_party = ["gatox"]
 
 [tool.ruff]
 line-length = 88

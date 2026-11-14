@@ -29,6 +29,7 @@ from gatox.cli.config_file import (
     split_by_parser,
 )
 from gatox.cli.enumeration.config import configure_parser_enumerate
+from gatox.cli.exit_codes import ExitCode, command_diagnostics
 from gatox.cli.output import SPLASH, Output
 from gatox.cli.persistence.config import configure_parser_persistence
 from gatox.cli.search.config import configure_parser_search
@@ -42,7 +43,8 @@ from gatox.search.search import Searcher
 from gatox.util.arg_utils import read_file_and_validate_lines
 
 
-async def cli(args):
+async def cli(args: list[str]) -> int:
+    """Parse and execute a command, returning a documented process status."""
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawTextHelpFormatter,
         description=(
@@ -50,6 +52,12 @@ async def cli(args):
             f" function!{Style.RESET_ALL}\n\nThis can be passed via the"
             ' "GH_TOKEN" environment variable, or if it is not set,\nthen the'
             " application will prompt you for one. App enumeration requires a GitHub App ID and PEM file.\n\n"
+        ),
+        epilog=(
+            "Exit statuses: 0 success; 1 operation failed or incomplete; "
+            "2 invalid arguments/configuration; 3 completed with no results; "
+            "130 interrupted. Enumeration results are repositories/organizations, "
+            "not just vulnerability findings."
         ),
     )
 
@@ -133,23 +141,37 @@ async def cli(args):
     print(Output.blue(SPLASH))
 
     try:
-        await arguments.func(arguments, subparsers)
+        with command_diagnostics() as diagnostics:
+            result = await arguments.func(arguments, subparsers)
+        if diagnostics.failed or result is False:
+            return ExitCode.ERROR
+        return ExitCode.SUCCESS if result is None or result is True else int(result)
     except AppAuthError as exc:
         # Bad App ID, unusable private key, App not installed on the target.
         # The message already says what to do; a traceback would not.
         Output.error(str(exc))
         raise SystemExit(1) from None
+    except Exception as exc:
+        Output.error(f"Command failed: {exc}")
+        logging.getLogger(__name__).debug("Command failure", exc_info=True)
+        return ExitCode.ERROR
 
 
-def save_workflow_ymls(output_directory):
+def save_workflow_ymls(output_directory: str) -> None:
+    """Export cached workflows without allowing names to escape the output root."""
+    root = Path(output_directory).resolve()
     for repo in CacheManager().get_repos():
-        Path(os.path.join(output_directory, f"{repo}")).mkdir(
-            parents=True, exist_ok=True
-        )
+        repo_path = (root / repo).resolve()
+        if not repo_path.is_relative_to(root) or repo_path == root:
+            raise ValueError(f"Unsafe repository output path: {repo}")
+        repo_path.mkdir(parents=True, exist_ok=True)
         for workflow in CacheManager().get_workflows(repo):
-            with open(
-                os.path.join(output_directory, f"{repo}/{workflow.workflow_name}"), "w"
-            ) as wf_out:
+            destination = (repo_path / workflow.workflow_name).resolve()
+            if not destination.is_relative_to(repo_path) or destination == repo_path:
+                raise ValueError(
+                    f"Unsafe workflow output path: {workflow.workflow_name}"
+                )
+            with open(str(destination), "w") as wf_out:
                 wf_out.write(workflow.workflow_contents)
 
 
@@ -459,7 +481,7 @@ async def attack(args, parser):
         app_session, api_client = await build_app_api(args, target=args.target)
 
     try:
-        await _attack(args, parser, api_client)
+        return await _attack(args, parser, api_client)
     finally:
         if app_session:
             await app_session.close()
@@ -715,6 +737,9 @@ async def enumerate_finegrained(args, parser):
         await gh_enumeration_runner.validate_token_and_get_user()
         exec_wrapper = Execution()
         exec_wrapper.set_user_details(gh_enumeration_runner.user_perms)
+        status = (
+            ExitCode.SUCCESS if gh_enumeration_runner.user_perms else ExitCode.ERROR
+        )
     elif args.self_enumeration:
         # Fine-grained self enumeration
         result = await gh_enumeration_runner.enumerate_fine_grained_token()
@@ -722,6 +747,9 @@ async def enumerate_finegrained(args, parser):
         exec_wrapper.set_user_details(gh_enumeration_runner.user_perms)
         if isinstance(result, list):
             exec_wrapper.add_repositories(result)
+        status = ExitCode.SUCCESS if result else ExitCode.NO_RESULTS
+        if not gh_enumeration_runner.user_perms:
+            status = ExitCode.ERROR
     else:
         # Fine-grained tokens only support self enum and single repo
         parser.error(
@@ -730,14 +758,9 @@ async def enumerate_finegrained(args, parser):
         )
         return
 
-    # Handle output
-    try:
-        if args.output_json:
-            Output.write_json(exec_wrapper, args.output_json)
-    except Exception:
-        Output.error(
-            "Encountered an error writing the output JSON, this is likely a Gato-X bug."
-        )
+    if args.output_json:
+        Output.write_json(exec_wrapper, args.output_json)
+    return status
 
 
 async def enumerate_classic(args, parser):
@@ -751,7 +774,9 @@ async def enumerate_classic(args, parser):
         app_permissions = app_session.app_permissions
 
     try:
-        await _enumerate_classic(args, parser, api_client, app_permissions, app_session)
+        return await _enumerate_classic(
+            args, parser, api_client, app_permissions, app_session
+        )
     finally:
         if app_session:
             await app_session.close()
@@ -780,6 +805,7 @@ async def _enumerate_classic(args, parser, api_client, app_permissions, app_sess
     exec_wrapper = Execution()
     orgs = []
     repos = []
+    failed = False
 
     if args.validate:
         orgs = await gh_enumeration_runner.validate_only() or []
@@ -787,6 +813,8 @@ async def _enumerate_classic(args, parser, api_client, app_permissions, app_sess
         result = await gh_enumeration_runner.self_enumeration()
         if result:
             orgs, repos = result
+        else:
+            failed = True
     elif args.target:
         # First, determine if the target is an organization or a repository.
         if (
@@ -795,9 +823,11 @@ async def _enumerate_classic(args, parser, api_client, app_permissions, app_sess
         ):
             org = await gh_enumeration_runner.enumerate_organization(args.target)
             orgs = [org] if org else []
+            failed = org is None
         else:
             # Otherwise, simply enumerate all repositories belonging to the user.
             repos = await gh_enumeration_runner.enumerate_user(args.target)
+            failed = repos is None
     elif args.repositories:
         try:
             repo_list = read_file_and_validate_lines(
@@ -821,6 +851,7 @@ async def _enumerate_classic(args, parser, api_client, app_permissions, app_sess
             args.repository, args.commit
         )
         repos = [repo_obj] if repo_obj else []
+        failed = repo_obj is None
     elif args.repository:
         repos = await gh_enumeration_runner.enumerate_repos([args.repository])
 
@@ -835,17 +866,18 @@ async def _enumerate_classic(args, parser, api_client, app_permissions, app_sess
     if isinstance(repos, list):
         exec_wrapper.add_repositories(repos)
 
-    try:
-        if args.output_json:
-            Output.write_json(exec_wrapper, args.output_json)
-    except Exception:
-        Output.error(
-            "Encountered an error writing the output JSON, this is likely a Gato-X bug."
-        )
+    if args.output_json:
+        Output.write_json(exec_wrapper, args.output_json)
 
     if args.cache_save_file:
         LocalCacheFactory.dump_cache(args.cache_save_file)
         Output.info(f"Cache saved to file:{args.cache_save_file}")
+
+    if failed or not gh_enumeration_runner.user_perms or gh_enumeration_runner.failed:
+        return ExitCode.ERROR
+    if args.validate:
+        return ExitCode.SUCCESS
+    return ExitCode.SUCCESS if orgs or repos else ExitCode.NO_RESULTS
 
 
 async def enumerate(args, parser):
@@ -907,15 +939,14 @@ async def enumerate(args, parser):
         Output.info(f"Cache restored from file:{args.cache_restore_file}")
 
     if local_path:
-        await enumerate_local(args, parser)
-        return
+        return await enumerate_local(args, parser)
 
     # App installation tokens are not fine-grained PATs; they take the
     # classic path with the App's own permissions supplied by the session.
     if args.gh_token and "github_pat" in args.gh_token:
-        await enumerate_finegrained(args, parser)
+        return await enumerate_finegrained(args, parser)
     else:
-        await enumerate_classic(args, parser)
+        return await enumerate_classic(args, parser)
 
 
 async def enumerate_local(args, parser):
@@ -948,17 +979,16 @@ async def enumerate_local(args, parser):
     exec_wrapper.set_user_details(runner.user_perms)
     exec_wrapper.add_repositories(repos)
 
-    try:
-        if args.output_json:
-            Output.write_json(exec_wrapper, args.output_json)
-    except Exception:
-        Output.error(
-            "Encountered an error writing the output JSON, this is likely a Gato-X bug."
-        )
+    if args.output_json:
+        Output.write_json(exec_wrapper, args.output_json)
 
     if args.cache_save_file:
         LocalCacheFactory.dump_cache(args.cache_save_file)
         Output.info(f"Cache saved to file:{args.cache_save_file}")
+
+    if runner.failed:
+        return ExitCode.ERROR
+    return ExitCode.SUCCESS if repos else ExitCode.NO_RESULTS
 
 
 async def search(args, parser):
@@ -970,7 +1000,7 @@ async def search(args, parser):
         app_session, api_client = await build_app_api(args, target=args.target)
 
     try:
-        await _search(args, parser, api_client)
+        return await _search(args, parser, api_client)
     finally:
         if app_session:
             await app_session.close()
@@ -1008,8 +1038,10 @@ async def _search(args, parser, api_client=None):
         else:
             results = await gh_search_runner.use_search_api(organization=args.target)
 
-    if results:
-        gh_search_runner.present_results(results, args.output_text)
+    if results is None:
+        return ExitCode.ERROR
+    gh_search_runner.present_results(results, args.output_text)
+    return ExitCode.SUCCESS if results else ExitCode.NO_RESULTS
 
 
 async def app(args, parser):
@@ -1055,47 +1087,55 @@ async def app(args, parser):
     exec_wrapper = Execution()
 
     try:
-        await app_enumerator.validate_app()
+        app_info = await app_enumerator.validate_app()
+        if not app_info:
+            return ExitCode.ERROR
+        exec_wrapper.set_user_details(
+            {"user": app_info.get("slug", str(app_id)), "scopes": []}
+        )
+        results = []
         if args.installations:
             # List all installations with metadata
             installations = await app_enumerator.list_installations()
             app_enumerator.report_installations(installations)
+            exec_wrapper.add_installations(installations)
+            results = installations
 
         elif args.installation:
             # Enumerate specific installation
             installation_repos = await app_enumerator.enumerate_installation(
                 args.installation
             )
+            results = installation_repos
             if installation_repos:
                 Output.result(
                     f"Successfully enumerated installation {args.installation}"
                 )
                 exec_wrapper.add_repositories(installation_repos)
-            else:
+            elif installation_repos is None:
                 Output.error(f"Failed to enumerate installation {args.installation}")
+                return ExitCode.ERROR
+        else:
+            parser.error("Select --installations or --installation.")
         # Save output if requested
         if args.output_json:
-            try:
-                Output.write_json(exec_wrapper, args.output_json)
-            except Exception:
-                Output.error(
-                    "Encountered an error writing the output JSON, this is likely a Gato-X bug."
-                )
+            Output.write_json(exec_wrapper, args.output_json)
+
+        return ExitCode.SUCCESS if results else ExitCode.NO_RESULTS
 
     except Exception as e:
         Output.error(f"App enumeration failed: {str(e)}")
+        return ExitCode.ERROR
     finally:
         await app_session.close()
 
 
 async def persistence(args, parser):
     """Handler for the persistence command."""
+    parser = parser.choices["persistence"]
     # Validate deploy key requirements
     if args.deploy_key and not args.key_path:
-        Output.error("--key-path is required when using --deploy-key")
-        return
-
-    parser = parser.choices["persistence"]
+        parser.error("--key-path is required when using --deploy-key")
 
     app_session = None
     api_client = None
@@ -1114,15 +1154,23 @@ async def persistence(args, parser):
 
     try:
         if args.collaborator:
-            await gh_persistence_runner.invite_collaborators(
+            result = await gh_persistence_runner.invite_collaborators(
                 args.target, args.collaborator, args.permission
             )
         elif args.deploy_key:
-            await gh_persistence_runner.create_deploy_key(
+            result = await gh_persistence_runner.create_deploy_key(
                 args.target, args.key_title, args.key_path
             )
+        else:
+            parser.error("Select --collaborator or --deploy-key.")
+            return ExitCode.USAGE
+        return ExitCode.SUCCESS if result else ExitCode.ERROR
     except Exception as e:
         Output.error(f"Persistence attack failed: {str(e)}")
+        return ExitCode.ERROR
+    finally:
+        if app_session:
+            await app_session.close()
 
 
 def _add_general_argument(parser, flags, **kwargs):

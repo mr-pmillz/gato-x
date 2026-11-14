@@ -112,9 +112,10 @@ class Searcher:
                 async with client.stream(
                     "GET", url, headers=headers, params=params, timeout=60.0
                 ) as response:
+                    response.raise_for_status()
                     async for line in response.aiter_lines():
                         if line and line.startswith("data:"):
-                            json_line = line.replace("data:", "").strip()
+                            json_line = line.removeprefix("data:").strip()
                             event = json.loads(json_line)
 
                             if (
@@ -129,14 +130,16 @@ class Searcher:
                                 )
                                 return None
 
+                            if not isinstance(event, list):
+                                continue
                             for element in event:
                                 if "repository" in element:
                                     results.add(
                                         element["repository"].replace("github.com/", "")
                                     )
         except httpx.ReadTimeout as e:
-            Output.warn(f"Request timed out: {str(e)}")
-            pass
+            Output.error(f"Search timed out; results may be incomplete: {e}")
+            return None
 
         return results
 

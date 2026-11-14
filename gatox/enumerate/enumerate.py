@@ -96,6 +96,7 @@ class Enumerator:
         self.ignore_workflow_run = ignore_workflow_run
         self.finegrained_permissions = finegrained_permisions
         self.save_runlogs = save_runlogs
+        self.failed = False
 
         self.repo_e = RepositoryEnum(self.api, skip_log, skip_secrets, save_runlogs)
         self.org_e = OrganizationEnum(self.api)
@@ -106,17 +107,12 @@ class Enumerator:
             installation_info = await self.api.app.get_installation_repos()
 
             if installation_info:
-                count = installation_info["total_count"]
-                if count > 0:
-                    self.user_perms = {
-                        "user": "Github App",
-                        "scopes": self.finegrained_permissions or [],
-                        "name": "GATO-X App Mode",
-                    }
-
-                    return True
-                else:
-                    return False
+                self.user_perms = {
+                    "user": "Github App",
+                    "scopes": self.finegrained_permissions or [],
+                    "name": "GATO-X App Mode",
+                }
+                return True
 
         if not self.user_perms:
             self.user_perms = await self.api.user.check_user()
@@ -315,6 +311,7 @@ class Enumerator:
 
             return repo
         else:
+            self.failed = True
             Output.warn(
                 f"Unable to enumerate {Output.bright(repo_name)}! It may not "
                 "exist or the user does not have access."
@@ -550,6 +547,7 @@ class Enumerator:
                     organization.set_repository(repo)
         except KeyboardInterrupt:
             Output.warn("Keyboard interrupt detected, exiting enumeration!")
+            raise
 
         return organization
 
@@ -580,6 +578,7 @@ class Enumerator:
                 else:
                     return await visitor_func(WorkflowGraphBuilder().graph, self.api)
             except Exception as e:
+                self.failed = True
                 logger.error(f"Error in {visitor_class.__name__}: {e}")
                 return None
 
@@ -594,6 +593,7 @@ class Enumerator:
             if results and not isinstance(results, BaseException):
                 await VisitorUtils.add_repo_results(results, self.api)
             elif isinstance(results, BaseException):
+                self.failed = True
                 logger.error(f"Error in {visitor_class[0].__name__}: {results}")
 
         if not self.skip_log:
@@ -632,5 +632,6 @@ class Enumerator:
                     repo_wrappers.append(repo_obj)
         except KeyboardInterrupt:
             Output.warn("Keyboard interrupt detected, exiting enumeration!")
+            raise
 
         return repo_wrappers

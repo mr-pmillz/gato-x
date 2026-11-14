@@ -18,7 +18,7 @@ to follow responsible disclosure if you find vulnerabilities with Gato-X.
 
 ## Documentation
 
-For comprehensive documentation, please visit the [Gato-X Documentation](https://adnanekhan.github.io/gato-x/) site.
+For comprehensive documentation, please visit the [Gato-X Documentation](https://mr-pmillz.github.io/gato-x/) site.
 
 ## What is Gato-X?
 
@@ -55,6 +55,14 @@ docker run --rm -e GH_TOKEN ghcr.io/mr-pmillz/gato-x enumerate -t acme-corp
 
 Multi-arch images (`linux/amd64`, `linux/arm64`) are published to
 `ghcr.io/mr-pmillz/gato-x`. See [Docker Usage](docs/user-guide/advanced/docker.md).
+
+Shell automation can distinguish success (`0`), failure (`1`), invalid usage (`2`),
+empty results (`3`), and interruption (`130`). See
+[Exit Statuses](docs/user-guide/command-reference/exit-statuses.md).
+
+Release packages are published at [mr-pmillz/gato-x releases](https://github.com/mr-pmillz/gato-x/releases).
+See [Maintaining this Fork](docs/contribution-guide/releases.md) for the publishing workflow
+and the [upstream comparison](docs/contribution-guide/upstream-comparison.md).
 
 Any command line option can also live in `~/.config/gato-x/config.yaml` --
 see [Configuration File](docs/user-guide/advanced/configuration-file.md).
@@ -163,7 +171,7 @@ If you need to make on-the-fly modifications, then install it in editable mode w
 
 ## Contributing
 
-Contributions are welcome! Please [review](https://adnanekhan.github.io/gato-x/contribution-guide/contributions/) the design methodology before working on a new feature!
+Contributions are welcome! Please [review](https://mr-pmillz.github.io/gato-x/contribution-guide/contributions/) the design methodology before working on a new feature!
 
 Additionally, if you are proposing significant changes to the tool, please open an issue to start a conversation about the motivation for the changes.
 

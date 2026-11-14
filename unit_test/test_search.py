@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import httpx
+import pytest
 
 from gatox.cli.output import Output
 from gatox.github.api_base import ApiBase
@@ -170,8 +171,8 @@ async def test_search_api_cap(mock_time, capfd):
 
     searcher = Search(mock_client)
 
-    res = await searcher.search_enumeration("testOrganization")
-    assert len(res) == 1
+    with pytest.raises(RuntimeError, match="response code 422"):
+        await searcher.search_enumeration("testOrganization")
     out, err = capfd.readouterr()
     assert "Search failed with response code 422" in out
 
@@ -199,7 +200,9 @@ async def test_search_api_ratelimit(mock_time, capfd):
             ),
             links={"next": {"url": "test"}},
         ),
-        MagicMock(status_code=403, text="rate limit exceeded"),
+        MagicMock(
+            status_code=403, headers={"retry-after": "1"}, text="rate limit exceeded"
+        ),
         MagicMock(
             status_code=200,
             json=MagicMock(return_value={"items": [], "total_count": 0}),
@@ -243,8 +246,8 @@ async def test_search_api_permission(mock_time, capfd):
 
     searcher = Search(mock_client)
 
-    res = await searcher.search_enumeration("privateOrg")
-    assert len(res) == 0
+    with pytest.raises(RuntimeError, match="response code 422"):
+        await searcher.search_enumeration("privateOrg")
     out, err = capfd.readouterr()
     assert "Search failed with response code 422!" in out
 
@@ -256,6 +259,7 @@ async def test_search_api_iniitalrl(mock_time, capfd):
     mock_client.call_get.side_effect = [
         MagicMock(
             status_code=403,
+            headers={"retry-after": "1"},
             json=MagicMock(
                 return_value={
                     "documentation_url": "https://docs.github.com/en/free-pro-team@latest"
@@ -367,6 +371,5 @@ async def test_search_bad_token(mock_client, mock_time):
     )
 
     gh_search_runner = Searcher("ghp_AAAA")
-    res = await gh_search_runner.use_search_api("targetOrg")
-
-    assert res == set()
+    with pytest.raises(RuntimeError, match="response code 401"):
+        await gh_search_runner.use_search_api("targetOrg")
