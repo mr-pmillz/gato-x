@@ -1,0 +1,121 @@
+name: Build and Publish Container Image
+
+on:
+  push:
+    branches: [main, develop, 'release/**', 'hotfix/**']
+  pull_request:
+    branches: [main, develop, 'release/**', 'hotfix/**']
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      release-version:
+        description: Validated release version, without the v prefix
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gato-x-image-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/mr-pmillz/gato-x
+
+jobs:
+  tests:
+    if: github.event_name != 'pull_request'
+    uses: ./.github/workflows/pytest.yaml
+
+  verify:
+    name: Build and smoke test container
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          tags: gato-x:verify
+          cache-from: type=gha
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max' || '' }}
+      - name: Verify installed CLI, package data, MCP, and exit statuses
+        run: |
+          docker run --rm gato-x:verify --help
+          docker run --rm --entrypoint python gato-x:verify -c 'from gatox.mcp.mcp_server import entry; from gatox.configuration.configuration_manager import ConfigurationManager; assert ConfigurationManager().WORKFLOW_PARSING'
+          status=0
+          docker run --rm gato-x:verify --no-config enumerate --local /tmp || status=$?
+          test "$status" -eq 3
+
+  publish:
+    name: Publish multi-platform image
+    needs: [tests, verify]
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.repository == 'mr-pmillz/gato-x' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
+      - name: Validate release version
+        env:
+          RELEASE_VERSION: ${{ inputs.release-version }}
+        run: |
+          if [[ -n "$RELEASE_VERSION" && ! "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo 'Expected a stable MAJOR.MINOR.PATCH release version' >&2
+            exit 1
+          fi
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        id: meta
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: latest=false
+          tags: |
+            type=sha,prefix=sha-,format=long
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=develop,enable=${{ github.ref == 'refs/heads/develop' }}
+            type=raw,value=latest,enable=${{ inputs.release-version != '' }}
+            type=semver,pattern={{version}},value=${{ inputs.release-version }},enable=${{ inputs.release-version != '' }}
+            type=semver,pattern=v{{version}},value=${{ inputs.release-version }},enable=${{ inputs.release-version != '' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.release-version }},enable=${{ inputs.release-version != '' }}
+          labels: |
+            org.opencontainers.image.title=Gato-X
+            org.opencontainers.image.source=https://github.com/mr-pmillz/gato-x
+            org.opencontainers.image.licenses=Apache-2.0
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        id: build
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: true
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true

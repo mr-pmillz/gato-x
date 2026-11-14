@@ -96,6 +96,7 @@ class Enumerator:
         self.ignore_workflow_run = ignore_workflow_run
         self.finegrained_permissions = finegrained_permisions
         self.save_runlogs = save_runlogs
+        self.failed = False
 
         self.repo_e = RepositoryEnum(self.api, skip_log, skip_secrets, save_runlogs)
         self.org_e = OrganizationEnum(self.api)
@@ -106,17 +107,12 @@ class Enumerator:
             installation_info = await self.api.app.get_installation_repos()
 
             if installation_info:
-                count = installation_info["total_count"]
-                if count > 0:
-                    self.user_perms = {
-                        "user": "Github App",
-                        "scopes": self.finegrained_permissions or [],
-                        "name": "GATO-X App Mode",
-                    }
-
-                    return True
-                else:
-                    return False
+                self.user_perms = {
+                    "user": "Github App",
+                    "scopes": self.finegrained_permissions or [],
+                    "name": "GATO-X App Mode",
+                }
+                return True
 
         if not self.user_perms:
             self.user_perms = await self.api.user.check_user()
@@ -143,40 +139,101 @@ class Enumerator:
 
         return True
 
-    async def __query_graphql_workflows(self, queries):
+    async def __query_graphql_workflows(self, queries, repo_groups=None):
         """
         Query workflows using the GitHub GraphQL API.
 
-        This method performs an IO-heavy operation by querying workflows in batches.
-        It utilizes a semaphore to limit concurrent execution to 4 workers.
+        This method performs an IO-heavy operation by querying workflows
+        in batches, with adaptive re-splitting when GitHub returns 502
+        errors (indicating the batch is too large). It utilizes a
+        semaphore to limit concurrent execution to 4 workers.
 
         Args:
-            queries (List[Any]): A list of GraphQL query objects to be executed.
+            queries (list): A list of GraphQL query dicts to execute.
+            repo_groups (list, optional): Parallel list where
+                repo_groups[i] contains the Repository objects or repo
+                slugs that were batched into queries[i]. Required for
+                adaptive re-splitting on 502 errors.
 
         Returns:
             None
-
-        Raises:
-            Exception: Propagates any exceptions raised during the query execution.
         """
+        if repo_groups is None:
+            repo_groups = [None] * len(queries)
+
         Output.info(f"Querying repositories in {len(queries)} batches!")
         semaphore = asyncio.Semaphore(4)
-        tasks = []
 
-        async def bounded_query(query, i):
+        async def bounded_query(query, idx):
             async with semaphore:
-                return await DataIngestor.perform_query(self.api, query, i)
+                result = await DataIngestor.perform_query(self.api, query, idx)
+                return idx, result
 
-        for i, wf_query in enumerate(queries):
-            tasks.append(bounded_query(wf_query, i))
+        tasks = [bounded_query(wf_query, i) for i, wf_query in enumerate(queries)]
+        total_batches = len(queries)
 
         for coro in asyncio.as_completed(tasks):
-            result = await coro
+            i, result = await coro
             Output.info(
-                f"Processed {DataIngestor.check_status()}/{len(queries)} batches.",
+                f"Processed {DataIngestor.check_status()}/{total_batches} batches.",
                 end="\r",
             )
-            await DataIngestor.construct_workflow_cache(result)
+
+            if result["success"]:
+                try:
+                    await DataIngestor.construct_workflow_cache(result["data"])
+                except Exception as exc:  # noqa: BLE001 -- one batch only
+                    # Losing one batch costs those repos their cached
+                    # workflows, which the REST pass refetches. Letting
+                    # it propagate costs the entire scan.
+                    Output.warn(
+                        f"Failed to cache batch {i}: {exc}. Those repos "
+                        "will be retrieved over REST."
+                    )
+                    logger.warning("Batch %s caching failed", i, exc_info=exc)
+            elif result["should_split"] and repo_groups[i] is not None:
+                repos = repo_groups[i]
+                if len(repos) <= 3:
+                    # Nothing is cached for these repos, so the REST pass
+                    # that runs after this one picks them up. Caching None
+                    # here would be a no-op, not a fallback.
+                    Output.warn(
+                        f"GraphQL batch of {len(repos)} repos still failed "
+                        "with 502 at the minimum batch size; they will be "
+                        "retrieved individually over REST instead."
+                    )
+                    continue
+
+                mid = len(repos) // 2
+                half1 = repos[:mid]
+                half2 = repos[mid:]
+
+                Output.info(
+                    f"Batch {i} returned 502, splitting "
+                    f"{len(repos)} repos into smaller batches..."
+                )
+
+                # Determine whether repos are Repository objects or
+                # string slugs and call the appropriate query builder.
+                if isinstance(half1[0], Repository):
+                    sub_queries, sub_groups = GqlQueries.get_workflow_ymls(
+                        half1, batch_size=len(half1)
+                    )
+                else:
+                    sub_queries, sub_groups = GqlQueries.get_workflow_ymls_from_list(
+                        half1, batch_size=len(half1)
+                    )
+                await self.__query_graphql_workflows(sub_queries, sub_groups)
+
+                if isinstance(half2[0], Repository):
+                    sub_queries, sub_groups = GqlQueries.get_workflow_ymls(
+                        half2, batch_size=len(half2)
+                    )
+                else:
+                    sub_queries, sub_groups = GqlQueries.get_workflow_ymls_from_list(
+                        half2, batch_size=len(half2)
+                    )
+                await self.__query_graphql_workflows(sub_queries, sub_groups)
 
     async def __retrieve_missing_ymls(self, repo_name: str):
         """ """
@@ -254,6 +311,7 @@ class Enumerator:
 
             return repo
         else:
+            self.failed = True
             Output.warn(
                 f"Unable to enumerate {Output.bright(repo_name)}! It may not "
                 "exist or the user does not have access."
@@ -462,8 +520,8 @@ class Enumerator:
         )
 
         Output.info("Querying and caching workflow YAML files!")
-        wf_queries = GqlQueries.get_workflow_ymls(enum_list)
-        await self.__query_graphql_workflows(wf_queries)
+        wf_queries, wf_repo_groups = GqlQueries.get_workflow_ymls(enum_list)
+        await self.__query_graphql_workflows(wf_queries, wf_repo_groups)
         await self.__finalize_caches(enum_list)
 
         await self.process_graph()
@@ -489,6 +547,7 @@ class Enumerator:
                     organization.set_repository(repo)
         except KeyboardInterrupt:
             Output.warn("Keyboard interrupt detected, exiting enumeration!")
+            raise
 
         return organization
 
@@ -519,6 +578,7 @@ class Enumerator:
                 else:
                     return await visitor_func(WorkflowGraphBuilder().graph, self.api)
             except Exception as e:
+                self.failed = True
                 logger.error(f"Error in {visitor_class.__name__}: {e}")
                 return None
 
@@ -533,6 +593,7 @@ class Enumerator:
             if results and not isinstance(results, BaseException):
                 await VisitorUtils.add_repo_results(results, self.api)
             elif isinstance(results, BaseException):
+                self.failed = True
                 logger.error(f"Error in {visitor_class[0].__name__}: {results}")
 
         if not self.skip_log:
@@ -557,8 +618,8 @@ class Enumerator:
             f"Querying and caching workflow YAML files "
             f"from {len(repo_names)} repositories!"
         )
-        queries = GqlQueries.get_workflow_ymls_from_list(repo_names)
-        await self.__query_graphql_workflows(queries)
+        queries, repo_groups = GqlQueries.get_workflow_ymls_from_list(repo_names)
+        await self.__query_graphql_workflows(queries, repo_groups)
         for repo in repo_names:
             await self.__retrieve_missing_ymls(repo)
 
@@ -571,5 +632,6 @@ class Enumerator:
                     repo_wrappers.append(repo_obj)
         except KeyboardInterrupt:
             Output.warn("Keyboard interrupt detected, exiting enumeration!")
+            raise
 
         return repo_wrappers

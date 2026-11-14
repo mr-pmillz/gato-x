@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+
 import pytest
 
 from gatox.github.api import Api

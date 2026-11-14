@@ -1,6 +1,9 @@
 import os
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, call, mock_open, patch
+
+import pytest
 
 from gatox.cli import cli
 
@@ -30,7 +33,7 @@ class TestSaveWorkflowYmls(unittest.TestCase):
         ]
 
         # Call the function
-        output_directory = "/tmp/test_output"
+        output_directory = str(Path("/tmp/test_output").resolve())
         cli.save_workflow_ymls(output_directory)
 
         # Assert that mkdir was called correctly
@@ -57,3 +60,42 @@ class TestSaveWorkflowYmls(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@pytest.mark.parametrize(
+    ("repo", "workflow"),
+    [
+        ("../../escape", "test.yml"),
+        ("/outside", "test.yml"),
+        ("owner/repo", "../../escape.yml"),
+        ("owner/repo", "/outside.yml"),
+    ],
+)
+def test_output_paths_cannot_escape_root(tmp_path, repo, workflow):
+    """Untrusted cached names cannot write outside the selected output directory."""
+    with (
+        patch("gatox.cli.cli.CacheManager") as factory,
+        patch("builtins.open") as output,
+    ):
+        factory.return_value.get_repos.return_value = [repo]
+        factory.return_value.get_workflows.return_value = [
+            MagicMock(workflow_name=workflow)
+        ]
+        with pytest.raises(ValueError, match="Unsafe"):
+            cli.save_workflow_ymls(str(tmp_path))
+        output.assert_not_called()
+
+
+def test_workflow_export_rejects_symlink_escape(tmp_path):
+    """An existing symlink cannot redirect workflow output outside its repo."""
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    (repo_path / "workflow.yml").symlink_to(tmp_path / "outside.yml")
+    with patch("gatox.cli.cli.CacheManager") as factory:
+        factory.return_value.get_repos.return_value = ["repo"]
+        factory.return_value.get_workflows.return_value = [
+            MagicMock(workflow_name="workflow.yml")
+        ]
+        with pytest.raises(ValueError, match="Unsafe workflow"):
+            cli.save_workflow_ymls(str(tmp_path))
+    assert not (tmp_path / "outside.yml").exists()

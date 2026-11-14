@@ -264,6 +264,48 @@ async def test_local_api_stub_rejects_path_traversal(tmp_path):
 # --------------------------------------------------------------------------
 
 
+async def test_local_api_stub_rejects_external_symlinks(tmp_path):
+    """Repository symlinks cannot expose host files as actions or workflows."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "action.yml").write_text("DO NOT LEAK")
+    (root / "linked").symlink_to(outside, target_is_directory=True)
+    (root / "file.yml").symlink_to(outside / "action.yml")
+    inside = root / "inside"
+    inside.mkdir()
+    (inside / "action.yml").symlink_to(outside / "action.yml")
+    (root / "safe.yml").write_text("safe")
+    (root / "safe-link.yml").symlink_to(root / "safe.yml")
+    stub = LocalApiStub()
+    stub.register_repo_root("owner/repo", root)
+    for path in ("linked", "file.yml", "inside"):
+        assert await stub.retrieve_raw_action("owner/repo", path, "main") is None
+    assert (
+        await stub.retrieve_repo_file("owner/repo", "safe-link.yml", "main") == "safe"
+    )
+
+
+@pytest.mark.parametrize("directory_link", [False, True])
+async def test_local_workflows_reject_external_symlinks(tmp_path, directory_link):
+    """An out-of-repository workflow makes local analysis incomplete, not clean."""
+    root = tmp_path / "repo"
+    (root / ".github").mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "test.yml").write_text("name: outside\non: push\njobs: {}\n")
+    workflows = root / ".github/workflows"
+    if directory_link:
+        workflows.symlink_to(outside, target_is_directory=True)
+    else:
+        workflows.mkdir()
+        (workflows / "test.yml").symlink_to(outside / "test.yml")
+    enumerator = LocalEnumerator(str(root))
+    await enumerator.enumerate()
+    assert enumerator.failed
+
+
 PWN_WORKFLOW = """
 name: vulnerable
 on:

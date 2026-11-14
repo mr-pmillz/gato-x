@@ -12,18 +12,24 @@ def configure_parser_app(parser):
     parser.add_argument(
         "--app",
         "-a",
-        help="GitHub App ID to authenticate with.",
+        help=(
+            "GitHub App ID to authenticate with.\n"
+            "The shared --app-id flag (or GH_APP_ID) works here too."
+        ),
         metavar=f"{Fore.RED}APP_ID{Style.RESET_ALL}",
         type=int,
-        required=True,
+        required=False,
     )
 
     parser.add_argument(
         "--pem",
-        help="Path to the GitHub App private key PEM file.",
+        help=(
+            "Path to the GitHub App private key PEM file.\n"
+            "The shared --app-key flag (or GH_APP_KEY) works here too."
+        ),
         metavar=f"{Fore.RED}PATH/TO/PRIVATE_KEY.pem{Style.RESET_ALL}",
         type=ReadableFile(),
-        required=True,
+        required=False,
     )
 
     # Create mutually exclusive group for the different operation modes
@@ -52,6 +58,24 @@ def configure_parser_app(parser):
             "non-admin users."
         ),
         action="store_true",
+    )
+
+    parser.add_argument(
+        "--skip-secrets",
+        "-ss",
+        action="store_true",
+        help="Skip secrets enumeration for repositories and organizations.",
+    )
+
+    parser.add_argument(
+        "--skip-admin-runners",
+        "-sar",
+        action="store_true",
+        help=(
+            "Skip checking for self-hosted runners via the administrative API.\n"
+            "This is useful when the App has admin permissions but you want to\n"
+            "avoid the additional API calls."
+        ),
     )
 
     parser.add_argument(

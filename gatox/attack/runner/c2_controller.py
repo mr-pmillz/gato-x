@@ -88,7 +88,8 @@ class C2Controller:
                 else:
                     Output.error("Command was empty!")
 
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, EOFError):
+            # Ctrl+C or Ctrl+D; both mean leave the shell, not crash.
             print("Exiting shell...")
 
         return True

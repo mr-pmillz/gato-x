@@ -76,13 +76,13 @@ async def test_create_deploy_key_success(mock_output, persistence_attacker):
 
 @pytest.mark.asyncio
 @patch("gatox.attack.persistence.persistence_attack.Output")
-async def test_create_deploy_key_failure(mock_output, persistence_attacker):
+async def test_create_deploy_key_failure(mock_output, persistence_attacker, tmp_path):
     """Test deploy key creation failure."""
     persistence_attacker.setup_user_info = AsyncMock(return_value=True)
     persistence_attacker.api.repo.create_deploy_key = AsyncMock(return_value=False)
 
     result = await persistence_attacker.create_deploy_key(
-        "test/repo", "Test Key", "/tmp/test_key.pem"
+        "test/repo", "Test Key", str(tmp_path / "test_key.pem")
     )
 
     assert result is False
@@ -98,3 +98,25 @@ async def test_create_deploy_key_no_path(mock_output, persistence_attacker):
 
     assert result is False
     mock_output.error.assert_called_with("Key path is required for deploy key creation")
+
+
+async def test_deploy_key_permissions(persistence_attacker, tmp_path):
+    """Private key files must be readable only by their owner."""
+    persistence_attacker.setup_user_info = AsyncMock(return_value=True)
+    persistence_attacker.api.repo.create_deploy_key = AsyncMock(return_value=True)
+    key = tmp_path / "deploy.pem"
+    assert await persistence_attacker.create_deploy_key("owner/repo", key_path=str(key))
+    assert key.stat().st_mode & 0o777 == 0o600
+
+
+async def test_deploy_key_preserves_existing_file(persistence_attacker, tmp_path):
+    """A local path collision must fail before any remote key is created."""
+    persistence_attacker.setup_user_info = AsyncMock(return_value=True)
+    persistence_attacker.api.repo.create_deploy_key = AsyncMock()
+    key = tmp_path / "deploy.pem"
+    key.write_text("existing key")
+    assert not await persistence_attacker.create_deploy_key(
+        "owner/repo", key_path=str(key)
+    )
+    assert key.read_text() == "existing key"
+    persistence_attacker.api.repo.create_deploy_key.assert_not_awaited()

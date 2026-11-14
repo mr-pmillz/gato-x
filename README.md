@@ -1,3 +1,5 @@
+[![Plumber Score](https://score.getplumber.io/github.com/mr-pmillz/gato-x.svg)](https://score.getplumber.io/github.com/mr-pmillz/gato-x)
+[![Branch Policy](https://github.com/mr-pmillz/gato-x/actions/workflows/branch-policy.yml/badge.svg)](https://github.com/mr-pmillz/gato-x/actions/workflows/branch-policy.yml)
 ![Supported Python versions](https://img.shields.io/badge/python-3.10+-blue.svg)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
@@ -18,7 +20,7 @@ to follow responsible disclosure if you find vulnerabilities with Gato-X.
 
 ## Documentation
 
-For comprehensive documentation, please visit the [Gato-X Documentation](https://adnanekhan.github.io/gato-x/) site.
+For comprehensive documentation, please visit the [Gato-X Documentation](https://mr-pmillz.github.io/gato-x/) site.
 
 ## What is Gato-X?
 
@@ -44,13 +46,55 @@ Gato-X contains a powerful scanning engine for GitHub Actions vulnerabilities. I
 * Gate Check Detection (permission checks, etc.)
 * Lightweight Source-Sink Analysis for Variables
 * MCP Server
+* Offline SARIF and JSONL exports for code scanning and automation
 
 ## Quick Start
+
+### Run with Docker
+
+```bash
+docker run --rm -e GH_TOKEN ghcr.io/mr-pmillz/gato-x enumerate -t acme-corp
+```
+
+Multi-arch images (`linux/amd64`, `linux/arm64`) are published to
+`ghcr.io/mr-pmillz/gato-x`. See [Docker Usage](docs/user-guide/advanced/docker.md).
+
+Shell automation can distinguish success (`0`), failure (`1`), invalid usage (`2`),
+empty results (`3`), and interruption (`130`). See
+[Exit Statuses](docs/user-guide/command-reference/exit-statuses.md).
+
+Release packages are published at [mr-pmillz/gato-x releases](https://github.com/mr-pmillz/gato-x/releases).
+See [Maintaining this Fork](docs/contribution-guide/releases.md) for the publishing workflow
+and the [upstream comparison](docs/contribution-guide/upstream-comparison.md).
+
+Feature PRs target `develop`; release branches start from `develop`, hotfixes
+start from `main`, and merging either into `main` publishes the reviewed version.
+See the [Git Flow release guide](docs/contribution-guide/releases.md).
+
+Convert existing enumeration output without credentials:
+
+```bash
+gato-x report --input scan.json --format sarif --repository acme/example --output results.sarif
+gato-x report --input scan.json --format jsonl --output repositories.jsonl
+```
+
+See [Report Conversion](docs/user-guide/command-reference/report.md) for output
+semantics and code-scanning repository selection.
+
+Any command line option can also live in `~/.config/gato-x/config.yaml` --
+see [Configuration File](docs/user-guide/advanced/configuration-file.md).
+
 
 ### Search For GitHub Actions Vulnerabilities at GitHub Scale
 
 First, create a GitHub PAT with the `repo` scope. Set that PAT to the
 `GH_TOKEN` environment variable.
+
+Gato-X can also authenticate as a GitHub App with `--app-id` and `--app-key`
+(or `GH_APP_ID` / `GH_APP_KEY`), in which case it mints and renews the JWT and
+installation token itself, so a long run is not capped at the one-hour
+installation token lifetime. See
+[GitHub App Authentication](docs/user-guide/advanced/github-app-auth.md).
 
 Next, use the search feature to retrieve a list of candidate repositories:
 
@@ -103,14 +147,31 @@ See documentation for additional options such as specifying workflow name, branc
 
 Gato supports OS X and Linux with at least **Python 3.10**.
 
-Gato-X is published on PyPi, so you can simply install it with `pip install gato-x`
+> **Note:** This is a fork of [AdnaneKhan/gato-x](https://github.com/AdnaneKhan/gato-x)
+> and is **not** on PyPI under the `gato-x` name -- `pip install gato-x` fetches
+> the upstream project, not this fork.
 
-In order to install the tool from source, simply clone the repository and use `pip install`. 
-
-We recommend performing this within a virtual environment.
+The quickest way to run this fork is the container image:
 
 ```
-git clone https://github.com/AdnaneKhan/gato-x
+docker run --rm -e GH_TOKEN ghcr.io/mr-pmillz/gato-x enumerate -t acme-corp
+```
+
+To install from source, we recommend [uv](https://github.com/astral-sh/uv),
+which is also what CI uses:
+
+```
+git clone https://github.com/mr-pmillz/gato-x
+cd gato-x
+uv venv
+uv pip install .
+source .venv/bin/activate
+```
+
+Or with pip and a plain virtual environment:
+
+```
+git clone https://github.com/mr-pmillz/gato-x
 cd gato-x
 python3 -m venv venv
 source venv/bin/activate
@@ -118,7 +179,7 @@ pip install .
 ```
 OR You can use pipx
 ```
-git clone https://github.com/AdnaneKhan/gato-x
+git clone https://github.com/mr-pmillz/gato-x
 cd gato-x
 pipx install .
 ```
@@ -127,7 +188,7 @@ If you need to make on-the-fly modifications, then install it in editable mode w
 
 ## Contributing
 
-Contributions are welcome! Please [review](https://adnanekhan.github.io/gato-x/contribution-guide/contributions/) the design methodology before working on a new feature!
+Contributions are welcome! Please [review](https://mr-pmillz.github.io/gato-x/contribution-guide/contributions/) the design methodology before working on a new feature!
 
 Additionally, if you are proposing significant changes to the tool, please open an issue to start a conversation about the motivation for the changes.
 

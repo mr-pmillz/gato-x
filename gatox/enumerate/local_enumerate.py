@@ -138,16 +138,19 @@ class LocalApiStub(Api):
         rel = Path(path)
         if rel.is_absolute() or any(part == ".." for part in rel.parts):
             return None
-        candidate = root / rel
         try:
+            root = root.resolve()
+            candidate = (root / rel).resolve()
+            if not candidate.is_relative_to(root):
+                return None
             if candidate.is_file():
                 return candidate.read_text(encoding="utf-8", errors="replace")
             if candidate.is_dir():
                 for action_name in ("action.yml", "action.yaml"):
-                    inner = candidate / action_name
-                    if inner.is_file():
+                    inner = (candidate / action_name).resolve()
+                    if inner.is_relative_to(root) and inner.is_file():
                         return inner.read_text(encoding="utf-8", errors="replace")
-        except OSError as e:  # pragma: no cover - defensive
+        except (OSError, RuntimeError) as e:  # pragma: no cover - defensive
             logger.debug("[local] read error for %s/%s: %s", slug, path, e)
         return None
 
@@ -464,6 +467,7 @@ class LocalEnumerator:
         self.user_perms: dict | None = None
         self._loaded_repos: list[Repository] = []
         self._loaded_workflow_count = 0
+        self.failed = False
 
     # ---- discovery + loading ------------------------------------------------
 
@@ -486,12 +490,22 @@ class LocalEnumerator:
         if not wf_dir.is_dir():
             return loaded
 
+        if not wf_dir.resolve().is_relative_to(repo_dir.resolve()):
+            self.failed = True
+            logger.warning("[local] workflow directory escapes repository: %s", wf_dir)
+            return loaded
+
         for yml in sorted(wf_dir.iterdir()):
             if not yml.is_file() or not _is_workflow_file(yml.name):
                 continue
             try:
+                if not yml.resolve().is_relative_to(repo_dir.resolve()):
+                    self.failed = True
+                    logger.warning("[local] workflow file escapes repository: %s", yml)
+                    continue
                 contents = yml.read_text(encoding="utf-8", errors="replace")
             except OSError as e:
+                self.failed = True
                 logger.warning("[local] could not read %s: %s", yml, e)
                 continue
 
@@ -502,6 +516,7 @@ class LocalEnumerator:
                 default_branch=repo.repo_data["default_branch"],
             )
             if wf.isInvalid():
+                self.failed = True
                 logger.debug(
                     "[local] skipping invalid workflow YAML %s in %s",
                     yml.name,
@@ -571,6 +586,7 @@ class LocalEnumerator:
                 else:
                     return await visitor_func(WorkflowGraphBuilder().graph, self.api)
             except Exception as e:  # pragma: no cover - defensive
+                self.failed = True
                 logger.error(f"Error in {visitor_class.__name__}: {e}")
                 return None
 
@@ -583,6 +599,7 @@ class LocalEnumerator:
             if result and not isinstance(result, BaseException):
                 await VisitorUtils.add_repo_results(result, self.api)
             elif isinstance(result, BaseException):  # pragma: no cover
+                self.failed = True
                 logger.error(f"Error in {visitor_class[0].__name__}: {result}")
 
         # Runner detection from log files is API-only; we still run the graph

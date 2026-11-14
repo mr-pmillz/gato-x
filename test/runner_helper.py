@@ -50,7 +50,7 @@ elif sys.argv[1] == "dispatch":
     data = {"ref": run_ref}
 
     response = httpx.post(
-        "https://api.github.com/repos/AdnaneKhan/gato-x/actions/workflows/integration_sh.yaml/dispatches",
+        "https://api.github.com/repos/mr-pmillz/gato-x/actions/workflows/integration_sh.yaml/dispatches",
         headers=headers,
         json=data,
     )

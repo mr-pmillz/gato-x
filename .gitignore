@@ -165,3 +165,10 @@ cython_debug/
 
 # Output Artifacts
 *.zip
+
+# helper scripts
+gh_app_auth.sh
+docs/superpowers/
+
+# Local validation evidence, reports, and release dry runs
+.verification/

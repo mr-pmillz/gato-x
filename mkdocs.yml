@@ -1,7 +1,7 @@
 site_name: Gato-X Documentation
-site_url: https://adnanekhan.github.io/gato-x/
-repo_url: https://github.com/AdnaneKhan/gato-x
-repo_name: AdnaneKhan/gato-x
+site_url: https://mr-pmillz.github.io/gato-x/
+repo_url: https://github.com/mr-pmillz/gato-x
+repo_name: mr-pmillz/gato-x
 edit_uri: edit/main/docs/
 docs_dir: docs
 nav:
@@ -9,8 +9,10 @@ nav:
       - Installation: user-guide/installation.md
       - Command Reference:
           - Overview: user-guide/command-reference/index.md
+          - Exit Statuses: user-guide/command-reference/exit-statuses.md
           - Search Command: user-guide/command-reference/search.md
           - Enumerate Command: user-guide/command-reference/enumerate.md
+          - Report Conversion: user-guide/command-reference/report.md
           - Attack Command: user-guide/command-reference/attack.md
       - MCP Server: user-guide/mcp-server/mcp.md
       - Use Cases:
@@ -23,12 +25,17 @@ nav:
           - Understanding GitHub Actions Vulnerabilities: user-guide/advanced/vulnerabilities.md
           - Complex Attack Scenarios: user-guide/advanced/complex-attacks.md
           - OIDC Token Exchange: user-guide/advanced/oidc.md
+          - GitHub App Authentication: user-guide/advanced/github-app-auth.md
+          - Configuration File: user-guide/advanced/configuration-file.md
+          - Docker Usage: user-guide/advanced/docker.md
   - Quick Start: quick-start.md
   - Contribution Guide:
       - Overview: contribution-guide/contributions.md
       - Project Architecture: contribution-guide/architecture.md
       - Design Guidelines: contribution-guide/design.md
       - Testing Guidelines: contribution-guide/testing.md
+      - Releases: contribution-guide/releases.md
+      - Upstream Comparison: contribution-guide/upstream-comparison.md
       - New Features: contribution-guide/new-features.md  
 
 theme:
@@ -56,4 +63,4 @@ markdown_extensions:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/AdnaneKhan/gato-x
+      link: https://github.com/mr-pmillz/gato-x

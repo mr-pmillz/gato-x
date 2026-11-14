@@ -37,6 +37,11 @@ from urllib.parse import urlparse
 import httpx
 
 from gatox.cli.output import Output
+from gatox.github.credentials import (
+    AppAuthError,
+    CredentialProvider,
+    StaticTokenProvider,
+)
 
 if TYPE_CHECKING:
     from gatox.github.action_api import ActionApi
@@ -163,13 +168,14 @@ class ApiBase:
 
     def __init__(
         self,
-        pat: str,
+        pat: str | None = None,
         version: str = "2022-11-28",
         http_proxy: str | None = None,
         socks_proxy: str | None = None,
         github_url: str | None = "https://api.github.com",
         client: httpx.AsyncClient | None = None,
         app_permissions: list | None = None,
+        credentials: CredentialProvider | None = None,
     ) -> None:
         """Initialise the shared HTTP infrastructure.
 
@@ -186,15 +192,29 @@ class ApiBase:
                 tests so that they can inject a mock transport).
             app_permissions: Optional permissions list for GitHub App
                 tokens (purely informational, surfaced for callers).
+            credentials: Optional credential provider. When supplied it
+                replaces ``pat`` and is consulted before every request,
+                which is how GitHub App tokens are renewed mid-run.
         """
-        self.pat = pat
+        if credentials is None:
+            if not pat:
+                raise ValueError("A valid GitHub token must be provided!")
+            credentials = StaticTokenProvider(pat)
+
+        self.credentials = credentials
+        #: Last token the provider handed out. Kept as a plain attribute
+        #: because ``is_app_token`` and the CLI's token checks read it.
+        self.pat = pat or ""
         self.transport: str | None = None
         self.verify_ssl = True
         self.headers: dict[str, str] = {
             "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {pat}",
             "X-GitHub-Api-Version": version,
         }
+        if self.pat:
+            # Preserved so callers that inspect ``headers`` still see auth.
+            # The value actually sent is resolved per request in _auth_headers.
+            self.headers["Authorization"] = f"Bearer {self.pat}"
         self.github_url, self.graphql_url, rewritten_from = resolve_api_endpoints(
             github_url
         )
@@ -337,6 +357,48 @@ class ApiBase:
             return self.graphql_url
         return self.github_url + url
 
+    async def _auth_headers(self, strip_auth: bool = False) -> dict[str, str]:
+        """Build request headers carrying a token that is valid right now.
+
+        The token is resolved per request rather than captured at
+        construction, so a renewal by the credential provider takes effect
+        on the very next call without call sites knowing about it.
+        """
+        headers = copy.deepcopy(self.headers)
+        if strip_auth:
+            headers.pop("Authorization", None)
+            return headers
+
+        token = await self.credentials.get_token()
+        if token != self.pat:
+            self.pat = token
+        headers["Authorization"] = f"Bearer {token}"
+        return headers
+
+    async def _send(self, method: str, request_url: str, **kwargs) -> httpx.Response:
+        """Send a request, renewing the credential once if it is rejected.
+
+        A 401 on a renewable credential is almost always an expiry that beat
+        the refresh margin -- a revoked installation, or clock skew. One
+        forced renewal and one retry covers it. A second 401 is returned as
+        it is, so the caller sees GitHub's own explanation rather than us
+        looping on a credential that is genuinely bad.
+        """
+        headers = await self._auth_headers()
+        send = getattr(self.client, method)
+        response = await send(request_url, headers=headers, **kwargs)
+
+        if response.status_code == 401 and self.credentials.is_refreshable:
+            logger.debug(
+                "Got 401 for %s; renewing credential and retrying once", request_url
+            )
+            token = await self.credentials.refresh(stale_token=self.pat)
+            self.pat = token
+            headers["Authorization"] = f"Bearer {token}"
+            response = await send(request_url, headers=headers, **kwargs)
+
+        return response
+
     async def call_get(
         self, url: str, params: dict | None = None, strip_auth: bool = False
     ) -> httpx.Response:
@@ -353,20 +415,24 @@ class ApiBase:
         """
         request_url = self._build_url(url)
 
-        get_header = copy.deepcopy(self.headers)
-        if strip_auth:
-            del get_header["Authorization"]
-
         api_response: httpx.Response | None = None
         for _ in range(0, 5):
             try:
                 logger.debug(f"Making GET API request to {request_url}!")
-                api_response = await self.client.get(
-                    request_url,
-                    params=params,
-                    headers=get_header,
-                )
+                if strip_auth:
+                    api_response = await self.client.get(
+                        request_url,
+                        params=params,
+                        headers=await self._auth_headers(strip_auth=True),
+                    )
+                else:
+                    api_response = await self._send("get", request_url, params=params)
                 break
+            except AppAuthError:
+                # A bad App ID or unusable private key is not a transport
+                # problem. Retrying it five times just buries the real
+                # explanation under a generic "failed after 5 attempts".
+                raise
             except Exception as e:
                 logger.warning(
                     f"GET request {request_url} failed due to transport error re-trying",
@@ -387,7 +453,7 @@ class ApiBase:
         request_url = self._build_url(url)
         logger.debug(f"Making POST API request to {request_url}!")
 
-        api_response = await self.client.post(request_url, json=params, timeout=30)
+        api_response = await self._send("post", request_url, json=params, timeout=30)
         logger.debug(
             f"The POST request to {request_url} returned a {api_response.status_code}!"
         )
@@ -401,7 +467,7 @@ class ApiBase:
         request_url = self._build_url(url)
         logger.debug(f"Making PATCH API request to {request_url}!")
 
-        api_response = await self.client.patch(request_url, json=params)
+        api_response = await self._send("patch", request_url, json=params)
         logger.debug(
             f"The PATCH request to {request_url} returned a {api_response.status_code}!"
         )
@@ -415,7 +481,7 @@ class ApiBase:
         request_url = self._build_url(url)
         logger.debug(f"Making PUT API request to {request_url}!")
 
-        api_response = await self.client.put(request_url, json=params)
+        api_response = await self._send("put", request_url, json=params)
 
         await self._check_rate_limit(api_response.headers)
 
@@ -426,7 +492,7 @@ class ApiBase:
         request_url = self._build_url(url)
         logger.debug(f"Making DELETE API request to {request_url}!")
 
-        api_response = await self.client.delete(request_url)
+        api_response = await self._send("delete", request_url)
         logger.debug(
             f"The POST request to {request_url} returned a {api_response.status_code}!"
         )

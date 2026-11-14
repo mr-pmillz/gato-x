@@ -3,7 +3,7 @@ description: "Add a Gato-X Discovery and to the Hall of Fame"
 title: "Hall of Fame Entry - [REPOSITORY]"
 labels: ['hall-of-fame']
 assignees: 
-  - AdnaneKhan
+  - mr-pmillz
 body:
 - type: markdown
   attributes:

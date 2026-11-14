@@ -295,6 +295,9 @@ class TestAppEnumerator:
 
         # Mock for installation API
         mock_installation_api = AsyncMock()
+        # is_app_token is synchronous; on an AsyncMock it returns a
+        # truthy coroutine, which both warns and forces the wrong branch.
+        mock_installation_api.is_app_token = lambda: True
         mock_installation_api.app.get_installation_repos = AsyncMock(
             return_value={
                 "total_count": len(MOCK_INSTALLATION_REPOS),
@@ -428,6 +431,9 @@ class TestAppEnumerator:
         mock_api_instance.is_app_token = lambda: True  # Non-async method
 
         mock_installation_api = AsyncMock()
+        # is_app_token is synchronous; on an AsyncMock it returns a
+        # truthy coroutine, which both warns and forces the wrong branch.
+        mock_installation_api.is_app_token = lambda: True
         mock_installation_api.app.get_installation_repos = AsyncMock(
             return_value={
                 "total_count": 1,
@@ -492,6 +498,9 @@ class TestAppEnumerator:
         mock_api_instance.is_app_token = lambda: True  # Non-async method
 
         mock_installation_api = AsyncMock()
+        # is_app_token is synchronous; on an AsyncMock it returns a
+        # truthy coroutine, which both warns and forces the wrong branch.
+        mock_installation_api.is_app_token = lambda: True
         mock_installation_api.app.get_installation_repos = AsyncMock(
             return_value={
                 "total_count": 1,
@@ -581,6 +590,9 @@ class TestAppEnumerator:
         )
 
         mock_installation_api = AsyncMock()
+        # is_app_token is synchronous; on an AsyncMock it returns a
+        # truthy coroutine, which both warns and forces the wrong branch.
+        mock_installation_api.is_app_token = lambda: True
         mock_installation_api.app.get_installation_repos = AsyncMock(return_value=None)
         mock_installation_api.close = AsyncMock()
 
@@ -717,6 +729,9 @@ class TestAppEnumeratorPermissionChecks:
         )
 
         mock_installation_api = AsyncMock()
+        # is_app_token is synchronous; on an AsyncMock it returns a
+        # truthy coroutine, which both warns and forces the wrong branch.
+        mock_installation_api.is_app_token = lambda: True
         mock_installation_api.app.get_installation_repos = AsyncMock(
             return_value={
                 "total_count": 1,

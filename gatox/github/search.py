@@ -45,21 +45,34 @@ class Search:
                 f"self-hosted org:{organization} language:yaml path:.github/workflows"
             )
 
-        next_page = (
-            f"/search/code?q={query['q']}&sort={query['sort']}"
-            f"&per_page={query['per_page']}&page={query['page']}"
-        )
+        next_page = "/search/code"
+        next_page_params = query
 
         Output.info("Searching", end="", flush=True)
         candidates = set()
+        retries = 0
         while next_page:
-            result = await self.api_accessor.call_get(next_page)
+            result = await self.api_accessor.call_get(
+                next_page, params=next_page_params
+            )
             print(".", end="", flush=True)
             code = result.status_code
             data = result.json()
             headers = result.headers
 
-            if code == 403:
+            rate_limited = code == 429 or (
+                code == 403
+                and (
+                    headers.get("retry-after") is not None
+                    or headers.get("x-ratelimit-remaining") == "0"
+                )
+            )
+            if rate_limited:
+                retries += 1
+                if retries > 3:
+                    raise RuntimeError(
+                        "Search rate limit persisted after three retries"
+                    )
                 retry_after = headers.get("retry-after")
                 reset = headers.get("x-ratelimit-reset")
                 sleep = 60
@@ -68,6 +81,7 @@ class Search:
                 elif reset:
                     sleep = int(reset) - int(time.time()) + 5
 
+                sleep = max(1, min(sleep, 300))
                 print()
                 Output.warn(
                     f"Secondary API Rate Limit Hit. Sleeping for {sleep} seconds!"
@@ -87,16 +101,19 @@ class Search:
                         f"\t{context['errors'][0]['message']}"
                     )
 
-                return candidates
+                raise RuntimeError(f"GitHub search failed with response code {code}")
+
+            retries = 0
 
             if "incomplete_results" in data and data["incomplete_results"]:
                 print()
-                Output.warn("Search results incomplete due to GitHub timeout!")
+                raise RuntimeError("Search results incomplete due to GitHub timeout")
 
             for entry in data["items"]:
                 candidates.add(entry["repository"]["full_name"])
 
             next_page = result.links.get("next", {}).get("url")
+            next_page_params = None
             if next_page:
                 link = urlparse(next_page)
                 next_page = f"{link.path}?{link.query}"

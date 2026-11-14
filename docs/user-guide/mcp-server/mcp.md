@@ -69,4 +69,13 @@ These tools can be called programmatically or via compatible agent UIs.
 - Make sure your `GH_TOKEN` is valid and has the necessary scopes for your use case.
 - If you encounter issues, check the logs/output of the MCP server for error messages.
 
-For more details, see the [Gato-X repository](https://github.com/AdnaneKhan/gato-x) or the main documentation.
+For more details, see the [Gato-X repository](https://github.com/mr-pmillz/gato-x) or the main documentation.
+## Offline report export
+
+`export_enumeration_report` accepts `data` (native enumeration JSON or results
+from the enumeration tools), `format` (`sarif` or `jsonl`), and an optional
+`repository` (`owner/repo`). It returns the serialized report without network
+or filesystem access and needs no credentials. Select one repository when
+preparing a SARIF upload to GitHub Code Scanning. Malformed/failed enumeration
+objects produce an error. JSONL retains repository metadata; SARIF exports
+workflow findings. See [Report Conversion](../command-reference/report.md).

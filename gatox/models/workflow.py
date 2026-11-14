@@ -2,22 +2,11 @@ import logging
 from datetime import datetime
 
 import yaml
-from yaml.resolver import Resolver
 
+from gatox.models.yaml_loader import WorkflowLoader
 from gatox.workflow_parser.source_map import build_workflow_source_map
 
 logger = logging.getLogger(__name__)
-
-# remove resolver entries for On/Off/Yes/No
-for ch in "OoTtFf":
-    if len(Resolver.yaml_implicit_resolvers[ch]) == 1:
-        del Resolver.yaml_implicit_resolvers[ch]
-    else:
-        Resolver.yaml_implicit_resolvers[ch] = [
-            x
-            for x in Resolver.yaml_implicit_resolvers[ch]
-            if x[0] != "tag:yaml.org,2002:bool"
-        ]
 
 
 class Workflow:
@@ -42,7 +31,7 @@ class Workflow:
                 workflow_contents = workflow_contents.decode("utf-8")
 
             self.workflow_contents = workflow_contents
-            loader = yaml.CSafeLoader(workflow_contents.replace("\t", "  "))
+            loader = WorkflowLoader(workflow_contents.replace("\t", "  "))
             node = loader.get_single_node()
             if node is not None:
                 self.parsed_yml = loader.construct_document(node)

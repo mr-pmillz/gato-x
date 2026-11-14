@@ -31,6 +31,7 @@ from gatox.github.action_api import ActionApi
 from gatox.github.api_base import ApiBase
 from gatox.github.app_api import AppApi
 from gatox.github.commit_api import CommitApi
+from gatox.github.credentials import CredentialProvider
 from gatox.github.org_api import OrgApi
 from gatox.github.repo_api import RepoApi
 from gatox.github.user_api import UserApi
@@ -61,13 +62,14 @@ class Api(ApiBase):
 
     def __init__(
         self,
-        pat: str,
+        pat: str | None = None,
         version: str = "2022-11-28",
         http_proxy: str | None = None,
         socks_proxy: str | None = None,
         github_url: str | None = "https://api.github.com",
         client: httpx.AsyncClient | None = None,
         app_permissions: list | None = None,
+        credentials: CredentialProvider | None = None,
     ) -> None:
         """Initialise the shared infra and construct each sub-API.
 
@@ -82,6 +84,7 @@ class Api(ApiBase):
             github_url=github_url,
             client=client,
             app_permissions=app_permissions,
+            credentials=credentials,
         )
 
         # Construct each grouped sub-API once, passing the *same*

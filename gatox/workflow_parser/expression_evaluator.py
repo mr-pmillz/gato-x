@@ -28,11 +28,21 @@ class Wildcard:
     def __eq__(self, other):
         # If other is a context variable, then we just return it,
         # because context to context would be a direct comp.
-        if other.startswith("github."):
+        # Duck-typed on purpose: the operand may be another Wildcard,
+        # which forwards startswith to its own context string. Testing
+        # for str here would break Wildcard-to-Wildcard comparison --
+        # the head.repo.full_name == github.repository fork check.
+        if hasattr(other, "startswith") and other.startswith("github."):
             return self.value == other
 
-        # Otherwise if the other is a string, then wildcard match.
+        # Anything else -- a literal string, a bool, a number -- is a
+        # value the attacker can steer this context to, so it matches.
         return True
+
+    def __hash__(self):
+        # Defining __eq__ drops the inherited __hash__, and these end up
+        # in sets while tags and triggers are collected.
+        return hash(self.value)
 
     def startswith(self, check):
         return self.value.startswith(check)
@@ -53,19 +63,26 @@ class FlexibleAction:
     def __contains__(self, other):
         return other in self.options
 
+    @staticmethod
+    def _unquote(other):
+        """Strip expression quoting, leaving non-strings alone."""
+        if isinstance(other, str) and other.startswith("'") and other.endswith("'"):
+            return other[1:-1]
+        return other
+
     def __eq__(self, other):
-        if other.startswith("'") and other.endswith("'"):
-            other = other[1:-1]
-        if other in self.options:
-            return True
+        # Returns a real bool: falling off the end gave None, which is
+        # falsy but compares unequal to False.
+        return self._unquote(other) in self.options
 
     def __ne__(self, other):
-        if other.startswith("'") and other.endswith("'"):
-            other = other[1:-1]
+        other = self._unquote(other)
+        # The actor picks the option, so "not equal" holds whenever any
+        # option differs.
+        return any(option != other for option in self.options)
 
-        for option in self.options:
-            if option != other:
-                return True
+    def __hash__(self):
+        return hash(tuple(self.options))
 
 
 class ExpressionEvaluator:
@@ -121,6 +138,14 @@ class ExpressionEvaluator:
                 "github.event.pull_request.base.repo.owner.login",
             ]:
                 return Wildcard(node.value)
+            # Boolean literals are part of the threat model encoded in
+            # STANDARD_VARIABLES, not an unknown context. They were
+            # unreachable behind the github. check below, so every
+            # `== true` / `== false` comparison failed open instead of
+            # being answered.
+            elif node.value in ("true", "false"):
+                return self.variables[node.value]
+
             # Right now, it is not worth supporting non
             # github contexts. Anything that comes out of a step, etc.
             # is really hard to solve without running the step.

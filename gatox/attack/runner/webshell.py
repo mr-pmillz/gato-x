@@ -198,7 +198,13 @@ class WebShell(Attacker):
             "The following steps perform an automated overt attack. Type 'Confirm' to continue."
         )
 
-        user_input = input()
+        try:
+            user_input = input()
+        except EOFError:
+            # No terminal to confirm on. An unanswered prompt is not
+            # consent for an overt attack, so refuse rather than crash.
+            Output.warn("No input available to confirm; exiting attack!")
+            return False
 
         if user_input.lower() != "confirm":
             Output.warn("Exiting attack!")

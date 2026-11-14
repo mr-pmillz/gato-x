@@ -159,6 +159,8 @@ async def test_cli_old_token(mock_enumerator, capfd):
         github_url=None,
         ignore_workflow_run=False,
         save_runlogs=None,
+        finegrained_permisions=None,
+        api_client=None,
     )
 
     # Verify the enumerate_organization method was called
@@ -723,6 +725,8 @@ async def test_cli_skip_secrets_long_flag(mock_enumerator):
         github_url=None,
         ignore_workflow_run=False,
         save_runlogs=None,
+        finegrained_permisions=None,
+        api_client=None,
     )
 
 
@@ -755,6 +759,8 @@ async def test_cli_skip_secrets_short_flag(mock_enumerator):
         github_url=None,
         ignore_workflow_run=False,
         save_runlogs=None,
+        finegrained_permisions=None,
+        api_client=None,
     )
 
 
@@ -787,6 +793,8 @@ async def test_cli_skip_admin_runners_long_flag(mock_enumerator):
         github_url=None,
         ignore_workflow_run=False,
         save_runlogs=None,
+        finegrained_permisions=None,
+        api_client=None,
     )
 
 
@@ -819,6 +827,8 @@ async def test_cli_skip_admin_runners_short_flag(mock_enumerator):
         github_url=None,
         ignore_workflow_run=False,
         save_runlogs=None,
+        finegrained_permisions=None,
+        api_client=None,
     )
 
 
@@ -852,6 +862,8 @@ async def test_cli_defaults_skip_flags_to_false(mock_enumerator):
         github_url=None,
         ignore_workflow_run=False,
         save_runlogs=None,
+        finegrained_permisions=None,
+        api_client=None,
     )
 
 
@@ -884,6 +896,8 @@ async def test_cli_both_skip_flags_together(mock_enumerator):
         github_url=None,
         ignore_workflow_run=False,
         save_runlogs=None,
+        finegrained_permisions=None,
+        api_client=None,
     )
 
 
@@ -941,6 +955,8 @@ async def test_save_runlogs_flag_parsed(mock_enumerator, tmp_path):
         github_url=None,
         ignore_workflow_run=False,
         save_runlogs=runlogs_dir,
+        finegrained_permisions=None,
+        api_client=None,
     )
 
 
@@ -999,6 +1015,7 @@ async def test_cli_api_url_forwarded_to_searcher(mock_searcher):
         socks_proxy=None,
         http_proxy=None,
         github_url="https://ghe.example.com/api/v3",
+        api_client=None,
     )
 
 

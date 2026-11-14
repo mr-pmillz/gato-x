@@ -1,42 +1,40 @@
-name: Bump Gato-X Version
-
+name: Prepare Release Branch
 on:
   workflow_dispatch:
     inputs:
       new_version:
-        description: 'New semantic version, e.g. 1.0.2'
+        description: Stable version, e.g. 1.5.0 (without v)
         required: true
         type: string
-
+      kind:
+        description: Release from develop, or hotfix from main
+        type: choice
+        options: [release, hotfix]
+        default: release
+permissions:
+  contents: read
+concurrency:
+  group: gato-x-release-preparation
+  cancel-in-progress: false
 jobs:
-  bump-version:
-    if: ${{ github.actor == 'AdnaneKhan' }}
+  prepare:
+    if: github.repository == 'mr-pmillz/gato-x' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
-      pull-requests: write
-    env:
-      NEW_VERSION: ${{ github.event.inputs.new_version }}
-      BRANCH_NAME: bump_version_${{ github.event.inputs.new_version }}
+      actions: write
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update pyproject.toml with new version
-        run: |
-          echo "Updating pyproject.toml with version $NEW_VERSION"
-          sed -i "s/^version\s*=.*/version = \"$NEW_VERSION\"/" pyproject.toml
-
-      - name: Create pull request
-        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          add-paths: pyproject.toml
-          commit-message: "Bump version to ${{ env.NEW_VERSION }}"
-          branch: ${{ env.BRANCH_NAME }}
-          base: main
-          title: "Bump version to ${{ env.NEW_VERSION }}"
-          body: "This PR bumps the version to ${{ env.NEW_VERSION }}"
-          draft: false
+          python-version: '3.12'
+      - name: Prepare version and changelog on a new branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_VERSION: ${{ inputs.new_version }}
+          RELEASE_KIND: ${{ inputs.kind }}
+        run: python scripts/gitflow.py prepare --kind "$RELEASE_KIND" --version "$NEW_VERSION"

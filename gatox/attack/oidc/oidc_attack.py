@@ -25,6 +25,7 @@ import yaml
 
 from gatox.attack.attack import Attacker
 from gatox.cli.output import Output
+from gatox.models.yaml_loader import WorkflowDumper
 
 _INVALID_ARTIFACT_CHARS = re.compile(r'[":<>|*?\\/\r\n]')
 
@@ -94,7 +95,7 @@ class OIDCAttack(Attacker):
 
         yaml_file["jobs"] = {"testing": test_job}
 
-        class _OIDCDumper(yaml.Dumper):
+        class _OIDCDumper(WorkflowDumper):
             pass
 
         _OIDCDumper.add_representer(
